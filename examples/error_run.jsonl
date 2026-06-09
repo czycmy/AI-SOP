@@ -1,0 +1,8 @@
+{"frame_index": 1, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "screw_A", "present": true, "confidence": 0.93}]}
+{"frame_index": 2, "detections": [{"region_id": "R1", "hole_id": "H1", "part_type": "screw_A", "present": true, "confidence": 0.92}]}
+{"frame_index": 3, "detections": [{"region_id": "R1", "hole_id": "H1", "part_type": "screw_A", "present": true, "confidence": 0.93}]}
+{"frame_index": 4, "detections": [{"region_id": "R1", "hole_id": "H1", "part_type": "screw_A", "present": true, "confidence": 0.91}]}
+{"frame_index": 5, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "pin_B", "present": true, "confidence": 0.88}]}
+{"frame_index": 6, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "pin_B", "present": true, "confidence": 0.88}]}
+{"frame_index": 7, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "pin_B", "present": true, "confidence": 0.88}]}
+

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI SOP 监控台</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="product-name">AI SOP 监控台</div>
+          <div class="line-meta">模具中心 · 孔位装配顺序与完整性校验</div>
+        </div>
+        <div class="run-summary" aria-live="polite">
+          <div>
+            <span class="label">当前区域</span>
+            <strong id="activeRegion">-</strong>
+          </div>
+          <div>
+            <span class="label">当前孔位</span>
+            <strong id="activeHole">-</strong>
+          </div>
+          <div>
+            <span class="label">状态</span>
+            <strong id="runState">待机</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="panel region-panel" aria-labelledby="regionTitle">
+          <div class="panel-head">
+            <h1 id="regionTitle">区域 SOP</h1>
+            <span id="progressText" class="muted">0 / 0</span>
+          </div>
+          <div id="regionList" class="region-list"></div>
+        </section>
+
+        <section class="workbench" aria-labelledby="workbenchTitle">
+          <div class="panel-head workbench-head">
+            <div>
+              <h2 id="workbenchTitle">装配画面</h2>
+              <div id="frameText" class="muted">Frame -</div>
+            </div>
+            <div class="toolbar" role="group" aria-label="回放控制">
+              <button id="normalBtn" class="tool-btn active" type="button" title="正常样例">正常</button>
+              <button id="errorBtn" class="tool-btn" type="button" title="异常样例">异常</button>
+              <button id="playBtn" class="icon-btn" type="button" title="播放">▶</button>
+              <button id="stepBtn" class="icon-btn" type="button" title="单帧">▮▶</button>
+              <button id="resetBtn" class="icon-btn" type="button" title="重置">↺</button>
+            </div>
+          </div>
+
+          <div class="stage-wrap">
+            <div class="hand-status" aria-live="polite">
+              <span class="hand-dot"></span>
+              <div>
+                <strong id="handState">手部状态</strong>
+                <span id="handHint">画面稳定</span>
+              </div>
+            </div>
+            <div id="stage" class="stage" aria-label="孔位装配状态图"></div>
+            <svg id="handLayer" class="hand-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
+
+          <div class="metrics-row">
+            <div class="metric">
+              <span>完成孔位</span>
+              <strong id="doneCount">0</strong>
+            </div>
+            <div class="metric">
+              <span>异常次数</span>
+              <strong id="errorCount">0</strong>
+            </div>
+            <div class="metric">
+              <span>稳定帧</span>
+              <strong id="stableCount">0</strong>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <section class="bottom-strip event-panel" aria-labelledby="eventTitle">
+        <div class="panel-head">
+          <h2 id="eventTitle">异常记录</h2>
+          <span id="eventCount" class="muted">0 条</span>
+        </div>
+        <div id="eventList" class="event-list"></div>
+      </section>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

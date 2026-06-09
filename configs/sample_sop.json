@@ -1,0 +1,25 @@
+{
+  "confidence_threshold": 0.75,
+  "stable_frames_required": 3,
+  "missing_timeout_frames": 12,
+  "regions": [
+    {
+      "region_id": "R1",
+      "name": "第一片区域",
+      "steps": [
+        { "step": 1, "hole_id": "H1", "part_type": "screw_A" },
+        { "step": 2, "hole_id": "H2", "part_type": "screw_A" },
+        { "step": 3, "hole_id": "H3", "part_type": "pin_B" }
+      ]
+    },
+    {
+      "region_id": "R2",
+      "name": "第二片区域",
+      "steps": [
+        { "step": 1, "hole_id": "H4", "part_type": "screw_A" },
+        { "step": 2, "hole_id": "H5", "part_type": "screw_A" }
+      ]
+    }
+  ]
+}
+
