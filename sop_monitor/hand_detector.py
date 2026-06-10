@@ -72,13 +72,16 @@ class MediaPipeHandDetector:
 
         observations: list[HandObservation] = []
         for index, hand_landmarks in enumerate(result.hand_landmarks):
+            landmark_items = hand_landmarks.landmark if hasattr(hand_landmarks, "landmark") else hand_landmarks
             points = [
                 (
                     landmark.x * width,
                     landmark.y * height,
                 )
-                for landmark in hand_landmarks.landmark
+                for landmark in landmark_items
             ]
+            if not points:
+                continue
             xs = [point[0] for point in points]
             ys = [point[1] for point in points]
             score = None

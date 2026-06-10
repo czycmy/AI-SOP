@@ -5,7 +5,7 @@
 当前版本的装配判定逻辑是：
 
 ```text
-摄像头/检测结果 -> 孔位已装状态 -> SOP 状态机 -> 前端展示/事件日志
+摄像头/检测结果 -> 孔位已装状态 -> SOP 状态机 -> PySide6 客户端展示/事件日志
 ```
 
 模型暂时只需要判断“孔位有没有装零件”，不判断零件类型是否正确。手部监控作为画面状态展示和后续遮挡控制预留，不改变当前 SOP 判定结果。
@@ -16,11 +16,10 @@
 - 孔位顺序校验：检测到后续孔位提前安装时记录顺序异常。
 - 孔位完整性校验：当前孔位连续多帧确认已装后才判定完成。
 - 漏装超时记录：当前孔位长时间未确认完成时记录漏装异常。
-- 前端监控台：展示区域 SOP、装配画面、总览状态、异常记录。
-- 后端摄像头流：通过 `/camera.mjpg` 将 OpenCV 摄像头画面推到前端。
+- PySide6 桌面客户端：展示区域 SOP、装配画面、总览状态、异常记录。
 - 摄像头预览：用于确认摄像头编号和系统权限。
 - YOLO 实时检测入口：接入训练好的 `best.pt` 后可做摄像头实时 SOP 监控。
-- MediaPipe 手部检测预留：可选开启后端手部关键点检测。
+- MediaPipe 手部监控展示：可选开启手部关键点检测并叠加到客户端画面。
 
 ## 目录结构
 
@@ -40,21 +39,16 @@
 │   ├── camera_utils.py
 │   ├── cli.py
 │   ├── config.py
+│   ├── desktop_app.py
 │   ├── detector.py
 │   ├── event_log.py
 │   ├── hand_detector.py
 │   ├── models.py
-│   ├── state_machine.py
-│   └── web_server.py
+│   └── state_machine.py
 ├── tests/
 │   ├── test_camera_utils.py
 │   ├── test_hand_detector.py
-│   ├── test_state_machine.py
-│   └── test_web_server.py
-├── web/
-│   ├── app.js
-│   ├── index.html
-│   └── styles.css
+│   └── test_state_machine.py
 ├── requirements.txt
 └── README.md
 ```
@@ -80,7 +74,7 @@
 
 - `requirements.txt`
   - Python 依赖列表。
-  - 当前包含 `ultralytics`、`opencv-python`、`onnxruntime`、`mediapipe`。
+  - 当前包含 `PySide6`、`ultralytics`、`opencv-python`、`onnxruntime`、`mediapipe`。
 
 - `scripts/env.sh`
   - 项目本地运行环境变量。
@@ -113,6 +107,13 @@
   - JSONL 回放命令入口。
   - 用于在没有摄像头和模型时验证 SOP 状态机逻辑。
 
+- `sop_monitor/desktop_app.py`
+  - PySide6 桌面客户端入口。
+  - 面向现场边缘机器部署，不需要操作浏览器。
+  - 打开后自动接入摄像头预览，展示区域 SOP、装配画面、状态概览和异常记录。
+  - 可通过 `--hands` 开启手部关键点展示。
+  - 当前 `开始监控`、`暂停监控`、`恢复监控`、`结束/复位`、`异常确认` 是界面预留。
+
 ### 摄像头和视觉模块
 
 - `sop_monitor/camera_preview.py`
@@ -133,27 +134,6 @@
   - 使用 MediaPipe Hand Landmarker 检测手部关键点。
   - 当前仅用于画面状态提示，不改变 SOP 判定。
 
-- `sop_monitor/web_server.py`
-  - 前端页面和后端摄像头流服务。
-  - 提供 `/web/` 前端页面和 `/camera.mjpg` MJPEG 摄像头流。
-
-### 前端
-
-- `web/index.html`
-  - 前端页面结构。
-  - 包含顶部总览、区域 SOP、装配画面、异常记录。
-
-- `web/styles.css`
-  - 前端样式。
-  - 定义监控台布局、孔位状态、异常记录、摄像头画面、手部关键点展示层。
-
-- `web/app.js`
-  - 前端交互逻辑。
-  - 读取 SOP 配置，渲染区域 SOP、孔位状态、异常记录。
-  - 页面打开后自动加载 `/camera.mjpg` 作为装配画面背景。
-  - 预留 `开始监控`、`暂停监控`、`恢复监控`、`结束/复位`、`异常确认` 按钮。
-  - 保留手部状态展示区域，后续可接入后端 MediaPipe 结果。
-
 ### 测试
 
 - `tests/test_state_machine.py`
@@ -167,10 +147,6 @@
 - `tests/test_hand_detector.py`
   - 手部检测辅助逻辑测试。
   - 验证手部框和 ROI 的相交判断。
-
-- `tests/test_web_server.py`
-  - Web 服务测试。
-  - 验证摄像头流 handler 能正确绑定。
 
 ## 环境准备
 
@@ -193,7 +169,48 @@ Windows 没有 `source scripts/env.sh`，可以先不设置缓存环境变量；
 
 ## 启动方式
 
-### 1. JSONL 回放验证
+### 1. 启动 PySide6 桌面客户端
+
+macOS / Linux：
+
+```bash
+source scripts/env.sh
+.venv/bin/python -m sop_monitor.desktop_app \
+  --config configs/sample_sop.json \
+  --camera 0
+```
+
+Windows：
+
+```bat
+.venv\Scripts\python -m sop_monitor.desktop_app --config configs/sample_sop.json --camera 0
+```
+
+说明：
+
+- 这是现场部署优先使用的入口，不需要打开浏览器。
+- 窗口启动后会自动打开摄像头预览。
+- `--camera 0` 通常是笔记本或工控机默认摄像头，外接摄像头可能是 `1` 或 `2`。
+- 当前桌面客户端先完成界面和摄像头预览，真实 SOP 开始/暂停/恢复/复位控制后续接入。
+
+开启客户端手部监控展示：
+
+```bash
+source scripts/env.sh
+.venv/bin/python -m sop_monitor.desktop_app \
+  --config configs/sample_sop.json \
+  --camera 0 \
+  --hands \
+  --hand-model models/hand_landmarker.task
+```
+
+说明：
+
+- 手部监控只影响画面展示和右侧“手部状态”，不参与 SOP 顺序和孔位完成判定。
+- 画面中检测到手时会叠加手部框、关键点和骨架。
+- 如果手部框接近当前孔位 ROI，右侧状态会显示“靠近区域”。
+
+### 2. JSONL 回放验证
 
 正常流程：
 
@@ -218,34 +235,6 @@ source scripts/env.sh
 ```text
 runs/events.jsonl
 ```
-
-### 2. 启动前端和后端摄像头流
-
-```bash
-source scripts/env.sh
-.venv/bin/python -m sop_monitor.web_server --camera 0 --port 8000
-```
-
-浏览器访问：
-
-```text
-http://127.0.0.1:8000/web/
-```
-
-摄像头流地址：
-
-```text
-http://127.0.0.1:8000/camera.mjpg
-```
-
-说明：
-
-- 前端页面打开后会自动加载 `/camera.mjpg`。
-- 装配画面工具栏里的 `关闭` 按钮可临时断开摄像头流。
-- 断开后再点击 `摄像头` 可重新连接摄像头流。
-- `开始监控`、`暂停监控`、`恢复监控`、`结束/复位`、`异常确认` 当前只完成界面预留，暂未接入生产控制逻辑。
-- 如果摄像头权限正常，装配画面会显示后端 OpenCV 摄像头画面。
-- 如果没有通过 `web_server` 启动，前端页面可以打开，但装配画面不会显示实时摄像头流。
 
 ### 3. 摄像头预览
 
@@ -291,7 +280,7 @@ source scripts/env.sh
 -> 输出事件日志
 ```
 
-### 5. 开启后端手部检测
+### 5. 命令行实时监控开启手部检测
 
 后端手部检测使用 MediaPipe Hand Landmarker。当前不默认开启，需要显式加 `--hands`：
 
@@ -420,7 +409,6 @@ source scripts/env.sh
 - SOP 状态机
 - ROI 映射
 - 手部 ROI 接近判断
-- Web 服务 handler 绑定
 
 ## 部署说明
 
@@ -435,7 +423,7 @@ source scripts/env.sh
 项目主体可迁移到 Windows：
 
 - Python 代码跨平台。
-- 前端为静态 HTML/CSS/JS，无 npm 依赖。
+- 现场主界面使用 PySide6 桌面客户端，不需要操作浏览器。
 - 摄像头编号需要现场测试，通常是 `0`、`1`、`2`。
 - Windows 命令中的 Python 路径使用 `.venv\Scripts\python`。
 - 如果有 NVIDIA GPU，YOLO 推理和训练速度会更好。
@@ -443,7 +431,7 @@ source scripts/env.sh
 Windows 运行示例：
 
 ```bat
-.venv\Scripts\python -m sop_monitor.web_server --camera 0 --port 8000
+.venv\Scripts\python -m sop_monitor.desktop_app --camera 0
 ```
 
 ## 当前限制
@@ -451,5 +439,5 @@ Windows 运行示例：
 - 还没有真实工位数据。
 - 还没有训练好的 YOLO 模型。
 - `configs/sample_sop.json` 里的 ROI 是示例值，需要现场标定。
-- 前端监控按钮目前只做界面预留，还没有接入生产控制接口。
+- PySide6 客户端监控按钮目前只做界面预留，还没有接入生产控制接口。
 - 后端手部检测为可选功能，当前不参与 SOP 判定。

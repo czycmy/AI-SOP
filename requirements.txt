@@ -2,3 +2,4 @@ ultralytics==8.4.63
 opencv-python==4.13.0.92
 onnxruntime==1.26.0
 mediapipe==0.10.35
+PySide6==6.10.1
