@@ -44,16 +44,18 @@
               <h2 id="workbenchTitle">装配画面</h2>
               <div id="frameText" class="muted">Frame -</div>
             </div>
-            <div class="toolbar" role="group" aria-label="回放控制">
-              <button id="normalBtn" class="tool-btn active" type="button" title="正常样例">正常</button>
-              <button id="errorBtn" class="tool-btn" type="button" title="异常样例">异常</button>
-              <button id="playBtn" class="icon-btn" type="button" title="播放">▶</button>
-              <button id="stepBtn" class="icon-btn" type="button" title="单帧">▮▶</button>
-              <button id="resetBtn" class="icon-btn" type="button" title="重置">↺</button>
+            <div class="toolbar" role="group" aria-label="监控控制">
+              <button id="startMonitorBtn" class="tool-btn active" type="button" title="开始监控">开始监控</button>
+              <button id="pauseMonitorBtn" class="tool-btn" type="button" title="暂停监控">暂停监控</button>
+              <button id="resumeMonitorBtn" class="tool-btn" type="button" title="恢复监控">恢复监控</button>
+              <button id="finishMonitorBtn" class="tool-btn" type="button" title="结束/复位">结束/复位</button>
+              <button id="ackErrorBtn" class="tool-btn" type="button" title="异常确认">异常确认</button>
+              <button id="cameraToggleBtn" class="tool-btn" type="button" title="摄像头">摄像头</button>
             </div>
           </div>
 
           <div class="stage-wrap">
+            <img id="cameraFeed" class="camera-feed" alt="后端摄像头实时画面">
             <div class="hand-status" aria-live="polite">
               <span class="hand-dot"></span>
               <div>

@@ -7,19 +7,18 @@
       "region_id": "R1",
       "name": "第一片区域",
       "steps": [
-        { "step": 1, "hole_id": "H1", "part_type": "screw_A" },
-        { "step": 2, "hole_id": "H2", "part_type": "screw_A" },
-        { "step": 3, "hole_id": "H3", "part_type": "pin_B" }
+        { "step": 1, "hole_id": "H1", "part_type": "installed_part", "roi": [0.12, 0.22, 0.28, 0.46] },
+        { "step": 2, "hole_id": "H2", "part_type": "installed_part", "roi": [0.29, 0.44, 0.45, 0.68] },
+        { "step": 3, "hole_id": "H3", "part_type": "installed_part", "roi": [0.16, 0.64, 0.32, 0.88] }
       ]
     },
     {
       "region_id": "R2",
       "name": "第二片区域",
       "steps": [
-        { "step": 1, "hole_id": "H4", "part_type": "screw_A" },
-        { "step": 2, "hole_id": "H5", "part_type": "screw_A" }
+        { "step": 1, "hole_id": "H4", "part_type": "installed_part", "roi": [0.60, 0.28, 0.76, 0.52] },
+        { "step": 2, "hole_id": "H5", "part_type": "installed_part", "roi": [0.72, 0.56, 0.88, 0.80] }
       ]
     }
   ]
 }
-

@@ -29,6 +29,7 @@ class StepSpec:
     step: int
     hole_id: str
     part_type: str
+    roi: tuple[float, float, float, float] | None = None
 
 
 @dataclass(frozen=True)

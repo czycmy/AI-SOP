@@ -25,6 +25,7 @@ def load_config(path: str | Path) -> MonitorConfig:
                     step=int(step["step"]),
                     hole_id=step["hole_id"],
                     part_type=step.get("part_type", "installed_part"),
+                    roi=tuple(step["roi"]) if "roi" in step else None,
                 )
                 for step in region["steps"]
             ],

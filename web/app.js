@@ -1,35 +1,24 @@
-// AI SOP 前端演示逻辑。
-// 本文件在浏览器中复刻后端第一阶段状态机：读取 SOP 配置和检测 JSONL，
-// 按帧回放检测结果，展示当前区域、当前孔位、稳定帧投票和异常事件。
-// 当前阶段只判断孔位有没有装，不判断零件类型是否正确。
+// AI SOP 前端监控台界面逻辑。
+// 本文件负责加载 SOP 配置、展示区域/孔位/异常记录，并接入后端摄像头画面。
+// 监控控制按钮当前只做界面预留，真实开始、暂停、恢复、复位、异常确认逻辑后续接入后端。
 
 const state = {
   config: null,
-  frames: [],
-  scenario: "normal",
-  timer: null,
-  cursor: 0,
   regionIndex: 0,
   stepIndex: 0,
   stableFrames: 0,
-  elapsedFrames: 0,
   completed: false,
   completedKeys: new Set(),
-  errorKeys: new Set(),
   events: [],
   latestDetections: [],
   latestFrame: null,
+  cameraLive: false,
   hand: {
     status: "idle",
     hint: "画面稳定",
     landmarks: [],
     occluding: false,
   },
-};
-
-const samples = {
-  normal: "../examples/normal_run.jsonl",
-  error: "../examples/error_run.jsonl",
 };
 
 const layout = {
@@ -56,7 +45,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindElements();
   bindActions();
   await loadConfig();
-  await loadScenario("normal");
+  resetRuntime();
+  startCameraFeed();
 });
 
 function bindElements() {
@@ -68,11 +58,12 @@ function bindElements() {
     "regionList",
     "stage",
     "frameText",
-    "normalBtn",
-    "errorBtn",
-    "playBtn",
-    "stepBtn",
-    "resetBtn",
+    "startMonitorBtn",
+    "pauseMonitorBtn",
+    "resumeMonitorBtn",
+    "finishMonitorBtn",
+    "ackErrorBtn",
+    "cameraToggleBtn",
     "doneCount",
     "errorCount",
     "stableCount",
@@ -81,17 +72,50 @@ function bindElements() {
     "handState",
     "handHint",
     "handLayer",
+    "cameraFeed",
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
 }
 
 function bindActions() {
-  els.normalBtn.addEventListener("click", () => loadScenario("normal"));
-  els.errorBtn.addEventListener("click", () => loadScenario("error"));
-  els.playBtn.addEventListener("click", togglePlayback);
-  els.stepBtn.addEventListener("click", stepFrame);
-  els.resetBtn.addEventListener("click", resetRuntime);
+  els.startMonitorBtn.addEventListener("click", markMonitorControlPending);
+  els.pauseMonitorBtn.addEventListener("click", markMonitorControlPending);
+  els.resumeMonitorBtn.addEventListener("click", markMonitorControlPending);
+  els.finishMonitorBtn.addEventListener("click", markMonitorControlPending);
+  els.ackErrorBtn.addEventListener("click", markMonitorControlPending);
+  els.cameraToggleBtn.addEventListener("click", toggleCameraFeed);
+}
+
+function markMonitorControlPending() {
+  els.runState.textContent = "待接入";
+}
+
+function toggleCameraFeed() {
+  if (state.cameraLive) {
+    stopCameraFeed();
+    return;
+  }
+  startCameraFeed();
+}
+
+function startCameraFeed() {
+  if (!els.cameraFeed || window.location.protocol === "file:") return;
+  state.cameraLive = true;
+  els.cameraFeed.src = `/camera.mjpg?t=${Date.now()}`;
+  els.cameraFeed.classList.add("live");
+  els.cameraToggleBtn.classList.add("active");
+  els.cameraToggleBtn.textContent = "关闭";
+}
+
+function stopCameraFeed() {
+  state.cameraLive = false;
+  if (els.cameraFeed) {
+    els.cameraFeed.removeAttribute("src");
+    els.cameraFeed.classList.remove("live");
+  }
+  els.cameraToggleBtn.classList.remove("active");
+  els.cameraToggleBtn.textContent = "摄像头";
 }
 
 async function loadConfig() {
@@ -99,35 +123,12 @@ async function loadConfig() {
   state.config = await response.json();
 }
 
-async function loadScenario(name) {
-  stopPlayback();
-  state.scenario = name;
-  const response = await fetch(samples[name]);
-  const text = await response.text();
-  state.frames = parseJsonl(text);
-  els.normalBtn.classList.toggle("active", name === "normal");
-  els.errorBtn.classList.toggle("active", name === "error");
-  resetRuntime();
-}
-
-function parseJsonl(text) {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
 function resetRuntime() {
-  stopPlayback();
-  state.cursor = 0;
   state.regionIndex = 0;
   state.stepIndex = 0;
   state.stableFrames = 0;
-  state.elapsedFrames = 0;
   state.completed = false;
   state.completedKeys = new Set();
-  state.errorKeys = new Set();
   state.events = [];
   state.latestDetections = [];
   state.latestFrame = null;
@@ -140,141 +141,6 @@ function resetRuntime() {
   render();
 }
 
-function togglePlayback() {
-  if (state.timer) {
-    stopPlayback();
-    return;
-  }
-  els.playBtn.classList.add("active");
-  els.playBtn.textContent = "Ⅱ";
-  state.timer = window.setInterval(() => {
-    if (!stepFrame()) {
-      stopPlayback();
-    }
-  }, 650);
-}
-
-function stopPlayback() {
-  if (state.timer) {
-    window.clearInterval(state.timer);
-    state.timer = null;
-  }
-  if (els.playBtn) {
-    els.playBtn.classList.remove("active");
-    els.playBtn.textContent = "▶";
-  }
-}
-
-function stepFrame() {
-  if (state.cursor >= state.frames.length || state.completed) {
-    return false;
-  }
-
-  const frame = state.frames[state.cursor];
-  state.cursor += 1;
-  updateStateMachine(frame);
-  render();
-  return state.cursor < state.frames.length && !state.completed;
-}
-
-function updateStateMachine(frame) {
-  state.latestFrame = frame.frame_index;
-  updateHandMonitor(frame.frame_index);
-  const region = activeRegion();
-  const expected = expectedStep();
-  if (!region || !expected) return;
-
-  state.elapsedFrames += 1;
-  const detections = frame.detections.filter((item) => item.region_id === region.region_id);
-  state.latestDetections = frame.detections;
-
-  // 顺序校验：当前区域内其他孔位先出现高置信度零件，即判为顺序异常。
-  // 这种情况已经隐含“当前孔位没先完成”，所以不再重复报漏装。
-  let hasOutOfOrderDetection = false;
-  detections.forEach((detection) => {
-    if (detection.hole_id === expected.hole_id) return;
-    if (!isHighConfidencePresent(detection)) return;
-    hasOutOfOrderDetection = true;
-    emitOnce(
-      "order_error",
-      frame.frame_index,
-      expected,
-      detection,
-      `当前应装 ${expected.hole_id}，但检测到 ${detection.hole_id} 已有零件。`,
-    );
-  });
-
-  const expectedDetection = bestDetection(detections, expected);
-  if (!expectedDetection) {
-    state.stableFrames = 0;
-    if (!hasOutOfOrderDetection) {
-      maybeMissing(frame.frame_index, expected);
-    }
-    return;
-  }
-
-  // 稳定帧投票：连续多帧确认后才真正推进 SOP。
-  state.stableFrames += 1;
-  if (state.stableFrames < state.config.stable_frames_required) return;
-
-  pushEvent("step_completed", frame.frame_index, expected, expectedDetection, `${region.name} ${expected.hole_id} 装配确认完成。`);
-  state.completedKeys.add(`${region.region_id}:${expected.hole_id}`);
-  advance(frame.frame_index, region, expected);
-}
-
-function updateHandMonitor(frameIndex) {
-  if (frameIndex === null || frameIndex === undefined) {
-    state.hand = {
-      status: "idle",
-      hint: "画面稳定",
-      landmarks: [],
-      occluding: false,
-    };
-    return;
-  }
-
-  const progress = (frameIndex % 9) / 8;
-  const centerX = 18 + progress * 58;
-  const centerY = 28 + Math.sin(frameIndex * 0.7) * 6 + (frameIndex > 9 ? 18 : 0);
-  const landmarks = buildHandLandmarks(centerX, centerY);
-  const occluding = isHandNearActiveRegion(centerX, centerY);
-
-  state.hand = {
-    status: occluding ? "occluding" : "detected",
-    hint: occluding ? "靠近装配区域" : "关键点跟踪中",
-    landmarks,
-    occluding,
-  };
-}
-
-function buildHandLandmarks(centerX, centerY) {
-  const fingers = [
-    [[-13, -4], [-19, -11], [-23, -18], [-26, -25]],
-    [[-6, -9], [-9, -19], [-10, -28], [-11, -36]],
-    [[1, -10], [1, -21], [1, -31], [2, -40]],
-    [[8, -7], [11, -17], [14, -26], [17, -34]],
-    [[14, 0], [20, -6], [25, -12], [30, -18]],
-  ];
-  const points = [{ x: centerX, y: centerY + 15 }];
-  fingers.forEach((finger) => {
-    finger.forEach(([x, y]) => points.push({ x: centerX + x, y: centerY + y }));
-  });
-  return points;
-}
-
-function isHandNearActiveRegion(centerX, centerY) {
-  const region = activeRegion();
-  if (!region) return false;
-  const box = layout[region.region_id]?.box;
-  if (!box) return false;
-  return (
-    centerX >= box.left
-    && centerX <= box.left + box.width
-    && centerY >= box.top
-    && centerY <= box.top + box.height
-  );
-}
-
 function activeRegion() {
   if (state.completed || !state.config) return null;
   return state.config.regions[state.regionIndex];
@@ -284,57 +150,6 @@ function expectedStep() {
   const region = activeRegion();
   if (!region) return null;
   return region.steps[state.stepIndex];
-}
-
-function isHighConfidencePresent(detection) {
-  return detection.present && detection.confidence >= state.config.confidence_threshold;
-}
-
-function bestDetection(detections, expected) {
-  return detections
-    .filter((item) => item.hole_id === expected.hole_id && isHighConfidencePresent(item))
-    .sort((a, b) => b.confidence - a.confidence)[0] || null;
-}
-
-function advance(frameIndex, region, expected) {
-  state.stepIndex += 1;
-  state.stableFrames = 0;
-  state.elapsedFrames = 0;
-  state.errorKeys = new Set();
-
-  if (state.stepIndex < region.steps.length) return;
-
-  pushEvent("region_completed", frameIndex, expected, null, `${region.name} 校验通过。`);
-  state.regionIndex += 1;
-  state.stepIndex = 0;
-
-  if (state.regionIndex >= state.config.regions.length) {
-    state.completed = true;
-    pushEvent("all_completed", frameIndex, expected, null, "全部区域 SOP 校验完成。");
-  }
-}
-
-function maybeMissing(frameIndex, expected) {
-  if (state.elapsedFrames < state.config.missing_timeout_frames) return;
-  emitOnce("missing_part", frameIndex, expected, null, `等待超时，${expected.hole_id} 未确认装配完成。`);
-}
-
-function emitOnce(type, frameIndex, expected, detection, message) {
-  const key = `${type}:${detection?.hole_id || ""}:${detection?.part_type || ""}`;
-  if (state.errorKeys.has(key)) return;
-  state.errorKeys.add(key);
-  pushEvent(type, frameIndex, expected, detection, message);
-}
-
-function pushEvent(type, frameIndex, expected, detection, message) {
-  state.events.unshift({
-    type,
-    frameIndex,
-    regionId: activeRegion()?.region_id || state.config.regions[Math.min(state.regionIndex, state.config.regions.length - 1)].region_id,
-    expected,
-    detection,
-    message,
-  });
 }
 
 function render() {
@@ -361,7 +176,7 @@ function renderSummary() {
   } else if (state.latestFrame !== null) {
     els.runState.textContent = "正常";
   } else {
-    els.runState.textContent = state.timer ? "运行中" : "待机";
+    els.runState.textContent = "待机";
   }
   els.progressText.textContent = `${doneSteps} / ${totalSteps}`;
   els.frameText.textContent = `Frame ${state.latestFrame ?? "-"}`;

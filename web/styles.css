@@ -299,6 +299,25 @@ h2 {
   background-size: 28px 28px;
 }
 
+.camera-feed {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+  background: #111923;
+}
+
+.camera-feed.live {
+  display: block;
+}
+
+.camera-feed.live + .hand-status + .stage {
+  background: rgba(238, 243, 246, 0.3);
+}
+
 .hand-status {
   position: absolute;
   top: 12px;
@@ -394,7 +413,8 @@ h2 {
   position: absolute;
   border: 2px solid #9aa9b7;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.46);
+  backdrop-filter: blur(1px);
 }
 
 .part-zone.active {

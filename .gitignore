@@ -1,4 +1,10 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.venv/
+.cache/
 runs/
+models/*.task
+weights/*.pt
+weights/*.onnx
+weights/*.engine
