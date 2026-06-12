@@ -47,18 +47,21 @@ def run_qt_app(
 
     try:
         from PySide6.QtCore import Qt, QThread, Signal
-        from PySide6.QtGui import QImage, QPixmap
+        from PySide6.QtGui import QColor, QImage, QPixmap
         from PySide6.QtWidgets import (
+            QAbstractItemView,
             QApplication,
             QFrame,
             QGridLayout,
             QHBoxLayout,
+            QHeaderView,
             QLabel,
             QListWidget,
-            QListWidgetItem,
             QMainWindow,
             QPushButton,
             QSizePolicy,
+            QTableWidget,
+            QTableWidgetItem,
             QVBoxLayout,
             QWidget,
         )
@@ -253,10 +256,23 @@ def run_qt_app(
             sop_panel = self._panel("区域 SOP")
             sop_layout = sop_panel.layout()
             sop_panel.setMinimumWidth(300)
-            self.sop_list = QListWidget()
-            self.sop_list.setObjectName("sopList")
-            self._populate_sop_list()
-            sop_layout.addWidget(self.sop_list)
+            self.sop_table = QTableWidget()
+            self.sop_table.setObjectName("sopTable")
+            self.sop_table.setColumnCount(4)
+            self.sop_table.setHorizontalHeaderLabels(["序号", "孔位", "状态", "耗时"])
+            self.sop_table.verticalHeader().setVisible(False)
+            self.sop_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.sop_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.sop_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+            self.sop_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.sop_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            self.sop_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            self.sop_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            self.sop_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            self.sop_table.horizontalHeader().setMinimumSectionSize(58)
+            self.sop_table.setAlternatingRowColors(True)
+            self._populate_sop_table()
+            sop_layout.addWidget(self.sop_table)
             side_layout.addWidget(sop_panel, 1)
 
             metrics = QGridLayout()
@@ -326,14 +342,43 @@ def run_qt_app(
             button.setMinimumHeight(30)
             return button
 
-        def _populate_sop_list(self):
-            self.sop_list.clear()
-            for region in self.config.regions:
-                region_item = QListWidgetItem(f"{region.name} · {region.region_id}")
-                region_item.setData(Qt.ItemDataRole.UserRole, "region")
-                self.sop_list.addItem(region_item)
-                for step in region.steps:
-                    self.sop_list.addItem(f"步骤 {step.step}  {step.hole_id}  已装确认")
+        def _populate_sop_table(self):
+            steps = [
+                (region.region_id, step.hole_id)
+                for region in self.config.regions
+                for step in region.steps
+            ]
+            self.sop_table.setRowCount(len(steps))
+            for row, (region_id, hole_id) in enumerate(steps):
+                status = "当前" if row == 0 else "等待"
+                duration = "0.0s" if row == 0 else "-"
+                self._set_sop_row(row, str(row + 1), f"{region_id}-{hole_id}", status, duration)
+
+        def _set_sop_row(self, row: int, index: str, hole_id: str, status: str, duration: str):
+            """更新 SOP 表格单行，后续真实监控逻辑会复用这里刷新状态和耗时。"""
+
+            self.sop_table.setItem(row, 0, self._table_item(index, status))
+            self.sop_table.setItem(row, 1, self._table_item(hole_id, status))
+            self.sop_table.setItem(row, 2, self._table_item(status, status))
+            self.sop_table.setItem(row, 3, self._table_item(duration, status))
+            self.sop_table.setRowHeight(row, 34)
+
+        def _table_item(self, text: str, status: str) -> QTableWidgetItem:
+            item = QTableWidgetItem(text)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            colors = {
+                "当前": (QColor("#fff7d6"), QColor("#8a5a00")),
+                "完成": (QColor("#dcfce7"), QColor("#166534")),
+                "异常": (QColor("#fee2e2"), QColor("#991b1b")),
+                "等待": (QColor("#ffffff"), QColor("#52606d")),
+            }
+            background, foreground = colors.get(status, colors["等待"])
+            if text == status:
+                item.setBackground(background)
+                item.setForeground(foreground)
+            else:
+                item.setForeground(QColor("#1f2933"))
+            return item
 
         def mark_control_pending(self):
             self._set_summary_value(self.status_label, "待接入")
@@ -478,6 +523,28 @@ def run_qt_app(
                 }
                 #eventList::item {
                     padding: 3px 6px;
+                }
+                QTableWidget {
+                    background: #ffffff;
+                    alternate-background-color: #f8fafc;
+                    border: 1px solid #e1e7ef;
+                    border-radius: 6px;
+                    gridline-color: #edf1f5;
+                    selection-background-color: transparent;
+                    selection-color: #1f2933;
+                }
+                QTableWidget::item {
+                    padding: 4px;
+                    border: 0;
+                }
+                QHeaderView::section {
+                    background: #eef2f6;
+                    color: #5f6f82;
+                    border: 0;
+                    border-right: 1px solid #dfe6ee;
+                    border-bottom: 1px solid #dfe6ee;
+                    padding: 7px 4px;
+                    font-weight: 700;
                 }
             """)
 
