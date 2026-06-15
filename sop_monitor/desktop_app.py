@@ -46,8 +46,8 @@ def run_qt_app(
     """延迟导入 PySide6 并启动应用，避免测试环境没有 Qt 时影响核心模块。"""
 
     try:
-        from PySide6.QtCore import Qt, QThread, Signal
-        from PySide6.QtGui import QColor, QImage, QPixmap
+        from PySide6.QtCore import QRectF, Qt, QThread, Signal
+        from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
         from PySide6.QtWidgets import (
             QAbstractItemView,
             QApplication,
@@ -70,6 +70,41 @@ def run_qt_app(
 
     import cv2
     from sop_monitor.hand_detector import MediaPipeHandDetector, any_hand_near_roi, draw_hand_overlay
+
+    class PieChartWidget(QWidget):
+        """右侧加工统计的小型饼图。"""
+
+        def __init__(self, normal_count: int = 0, abnormal_count: int = 0):
+            super().__init__()
+            self.normal_count = normal_count
+            self.abnormal_count = abnormal_count
+            self.setMinimumSize(86, 86)
+            self.setMaximumHeight(112)
+
+        def paintEvent(self, event):
+            super().paintEvent(event)
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            side = min(self.width(), self.height()) - 16
+            rect = QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
+            total = self.normal_count + self.abnormal_count
+            if total <= 0:
+                painter.setPen(QPen(QColor("#d9e1ea"), 10))
+                painter.drawEllipse(rect)
+                painter.setPen(QColor("#52606d"))
+                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "0")
+                return
+
+            normal_span = int(360 * 16 * self.normal_count / total)
+            abnormal_span = 360 * 16 - normal_span
+            painter.setPen(QPen(QColor("#16a34a"), 10))
+            painter.drawArc(rect, 90 * 16, -normal_span)
+            if abnormal_span:
+                painter.setPen(QPen(QColor("#dc2626"), 10))
+                painter.drawArc(rect, 90 * 16 - normal_span, -abnormal_span)
+            painter.setPen(QColor("#1f2933"))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(total))
 
     class CameraWorker(QThread):
         """在独立线程中读取摄像头，避免阻塞 Qt 主界面。"""
@@ -199,7 +234,7 @@ def run_qt_app(
             topbar.setSpacing(8)
             title = QLabel("AI SOP 监控台")
             title.setObjectName("title")
-            self.region_label = self._summary_card("当前区域", self.config.regions[0].name if self.config.regions else "-")
+            self.region_label = self._summary_card("当前区域", self.config.regions[0].region_id if self.config.regions else "-")
             self.hole_label = self._summary_card(
                 "当前孔位",
                 self.config.regions[0].steps[0].hole_id if self.config.regions and self.config.regions[0].steps else "-",
@@ -244,48 +279,43 @@ def run_qt_app(
             self.video_label.setMinimumHeight(610)
             self.video_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             workbench_layout.addWidget(self.video_label, 1)
-            body.addWidget(workbench, 8)
+            body.addWidget(workbench, 7)
 
             side_panel = QFrame()
             side_panel.setObjectName("sidePanel")
             side_layout = QVBoxLayout(side_panel)
             side_layout.setContentsMargins(0, 0, 0, 0)
             side_layout.setSpacing(8)
-            body.addWidget(side_panel, 2)
+            body.addWidget(side_panel, 3)
 
             sop_panel = self._panel("区域 SOP")
             sop_layout = sop_panel.layout()
-            sop_panel.setMinimumWidth(300)
+            sop_panel.setMinimumWidth(420)
             self.sop_table = QTableWidget()
             self.sop_table.setObjectName("sopTable")
-            self.sop_table.setColumnCount(4)
-            self.sop_table.setHorizontalHeaderLabels(["序号", "孔位", "状态", "耗时"])
+            self.sop_table.setColumnCount(6)
+            self.sop_table.setHorizontalHeaderLabels(["序号", "步骤名称", "当前孔位", "下一步动作", "结果", "耗时"])
             self.sop_table.verticalHeader().setVisible(False)
             self.sop_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
             self.sop_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
             self.sop_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
             self.sop_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.sop_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-            self.sop_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            self.sop_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             self.sop_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-            self.sop_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-            self.sop_table.horizontalHeader().setMinimumSectionSize(58)
+            self.sop_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+            self.sop_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+            self.sop_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+            self.sop_table.horizontalHeader().setMinimumSectionSize(44)
             self.sop_table.setAlternatingRowColors(True)
             self._populate_sop_table()
             sop_layout.addWidget(self.sop_table)
             side_layout.addWidget(sop_panel, 1)
 
-            metrics = QGridLayout()
-            metrics.setSpacing(6)
-            self.done_metric = self._metric_card("完成孔位", "0")
-            self.error_metric = self._metric_card("异常次数", "0")
-            self.stable_metric = self._metric_card("稳定帧", "0")
+            stats_panel = self._production_stats_panel()
+            side_layout.addWidget(stats_panel)
             self.hand_metric = self._metric_card("手部状态", "画面稳定")
-            metrics.addWidget(self.done_metric, 0, 0)
-            metrics.addWidget(self.error_metric, 1, 0)
-            metrics.addWidget(self.stable_metric, 2, 0)
-            metrics.addWidget(self.hand_metric, 3, 0)
-            side_layout.addLayout(metrics)
+            side_layout.addWidget(self.hand_metric)
 
             event_panel = self._panel("异常记录")
             event_panel.setMaximumHeight(118)
@@ -325,6 +355,38 @@ def run_qt_app(
             layout.addWidget(value_widget)
             return card
 
+        def _production_stats_panel(self) -> QFrame:
+            panel = QFrame()
+            panel.setObjectName("statsPanel")
+            layout = QHBoxLayout(panel)
+            layout.setContentsMargins(10, 8, 10, 8)
+            layout.setSpacing(10)
+
+            count_layout = QGridLayout()
+            count_layout.setSpacing(6)
+            count_layout.addWidget(self._stat_cell("加工量", "0"), 0, 0)
+            count_layout.addWidget(self._stat_cell("正常", "0"), 1, 0)
+            count_layout.addWidget(self._stat_cell("异常", "0"), 2, 0)
+            layout.addLayout(count_layout, 1)
+
+            self.stats_pie = PieChartWidget(normal_count=0, abnormal_count=0)
+            layout.addWidget(self.stats_pie)
+            return panel
+
+        def _stat_cell(self, label: str, value: str) -> QFrame:
+            cell = QFrame()
+            cell.setObjectName("statCell")
+            layout = QHBoxLayout(cell)
+            layout.setContentsMargins(8, 5, 8, 5)
+            label_widget = QLabel(label)
+            label_widget.setObjectName("metricLabel")
+            value_widget = QLabel(value)
+            value_widget.setObjectName("metricValue")
+            layout.addWidget(label_widget)
+            layout.addStretch(1)
+            layout.addWidget(value_widget)
+            return cell
+
         def _panel(self, title: str) -> QFrame:
             panel = QFrame()
             panel.setObjectName("panel")
@@ -352,15 +414,26 @@ def run_qt_app(
             for row, (region_id, hole_id) in enumerate(steps):
                 status = "当前" if row == 0 else "等待"
                 duration = "0.0s" if row == 0 else "-"
-                self._set_sop_row(row, str(row + 1), f"{region_id}-{hole_id}", status, duration)
+                self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{region_id}-{hole_id}", "装配确认", status, duration)
 
-        def _set_sop_row(self, row: int, index: str, hole_id: str, status: str, duration: str):
+        def _set_sop_row(
+            self,
+            row: int,
+            index: str,
+            step_name: str,
+            hole_id: str,
+            next_action: str,
+            result: str,
+            duration: str,
+        ):
             """更新 SOP 表格单行，后续真实监控逻辑会复用这里刷新状态和耗时。"""
 
-            self.sop_table.setItem(row, 0, self._table_item(index, status))
-            self.sop_table.setItem(row, 1, self._table_item(hole_id, status))
-            self.sop_table.setItem(row, 2, self._table_item(status, status))
-            self.sop_table.setItem(row, 3, self._table_item(duration, status))
+            self.sop_table.setItem(row, 0, self._table_item(index, result))
+            self.sop_table.setItem(row, 1, self._table_item(step_name, result))
+            self.sop_table.setItem(row, 2, self._table_item(hole_id, result))
+            self.sop_table.setItem(row, 3, self._table_item(next_action, result))
+            self.sop_table.setItem(row, 4, self._table_item(result, result))
+            self.sop_table.setItem(row, 5, self._table_item(duration, result))
             self.sop_table.setRowHeight(row, 34)
 
         def _table_item(self, text: str, status: str) -> QTableWidgetItem:
@@ -463,10 +536,15 @@ def run_qt_app(
                     color: #697586;
                     font-size: 12px;
                 }
-                #summaryCard, #metricCard, #panel {
+                #summaryCard, #metricCard, #panel, #statsPanel {
                     background: #ffffff;
                     border: 1px solid #d9e1ea;
                     border-radius: 8px;
+                }
+                #statCell {
+                    background: #f8fafc;
+                    border: 1px solid #e5ebf2;
+                    border-radius: 6px;
                 }
                 #sidePanel {
                     background: transparent;
@@ -507,6 +585,10 @@ def run_qt_app(
                 #metricCard {
                     max-height: 42px;
                 }
+                #statsPanel {
+                    min-height: 118px;
+                    max-height: 138px;
+                }
                 QListWidget {
                     background: #ffffff;
                     border: 1px solid #e1e7ef;
@@ -534,7 +616,7 @@ def run_qt_app(
                     selection-color: #1f2933;
                 }
                 QTableWidget::item {
-                    padding: 4px;
+                    padding: 3px;
                     border: 0;
                 }
                 QHeaderView::section {
@@ -543,7 +625,7 @@ def run_qt_app(
                     border: 0;
                     border-right: 1px solid #dfe6ee;
                     border-bottom: 1px solid #dfe6ee;
-                    padding: 7px 4px;
+                    padding: 6px 3px;
                     font-weight: 700;
                 }
             """)
