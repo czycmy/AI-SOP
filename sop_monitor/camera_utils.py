@@ -11,18 +11,70 @@ from typing import Iterable
 from sop_monitor.models import Detection, MonitorConfig, StepSpec
 
 
-def open_camera(camera_index: int, width: int | None = None, height: int | None = None):
-    """打开摄像头，并按需设置采集分辨率。"""
+def add_camera_source_arguments(parser) -> None:
+    """为命令行工具添加统一的摄像头来源参数。"""
+
+    parser.add_argument("--camera", default="0", help="摄像头来源：本地编号、RTSP 地址或视频路径。")
+    parser.add_argument("--hikvision-ip", default=None, help="海康摄像头 IP；提供后会自动生成 RTSP 地址。")
+    parser.add_argument("--hikvision-user", default="admin", help="海康摄像头账号。")
+    parser.add_argument("--hikvision-password", default=None, help="海康摄像头密码。")
+    parser.add_argument("--hikvision-channel", default="101", help="海康 RTSP 通道，主码流通常是 101。")
+
+
+def resolve_camera_source(args) -> str:
+    """根据普通摄像头参数或海康参数得到最终视频源。"""
+
+    if args.hikvision_ip:
+        if not args.hikvision_password:
+            raise ValueError("使用 --hikvision-ip 时必须提供 --hikvision-password。")
+        return build_hikvision_rtsp_url(
+            ip=args.hikvision_ip,
+            user=args.hikvision_user,
+            password=args.hikvision_password,
+            channel=args.hikvision_channel,
+        )
+    return args.camera
+
+
+def normalize_camera_source(source: int | str) -> int | str:
+    """把命令行传入的摄像头来源转换为 OpenCV 可接受的格式。
+
+    纯数字字符串会转成本地摄像头编号；RTSP/HTTP/file path 等保持字符串。
+    """
+
+    if isinstance(source, int):
+        return source
+    text = source.strip()
+    if text.isdigit():
+        return int(text)
+    return text
+
+
+def build_hikvision_rtsp_url(
+    ip: str,
+    user: str,
+    password: str,
+    channel: str = "101",
+) -> str:
+    """根据海康摄像头参数生成 RTSP 地址。"""
+
+    return f"rtsp://{user}:{password}@{ip}:554/Streaming/Channels/{channel}"
+
+
+def open_camera(source: int | str, width: int | None = None, height: int | None = None):
+    """打开本地摄像头编号或 RTSP 视频流，并按需设置采集分辨率。"""
 
     import cv2
 
-    capture = cv2.VideoCapture(camera_index)
+    camera_source = normalize_camera_source(source)
+    capture = cv2.VideoCapture(camera_source)
+    capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     if width:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     if height:
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     if not capture.isOpened():
-        raise RuntimeError(f"无法打开摄像头 {camera_index}。请检查编号、连接和系统权限。")
+        raise RuntimeError(f"无法打开摄像头/视频流 {source}。请检查编号、RTSP 地址、账号密码和网络。")
     return capture
 
 
@@ -128,4 +180,3 @@ def normalized_roi_to_pixels(
         int(x2 * width),
         int(y2 * height),
     )
-

@@ -14,10 +14,12 @@ import argparse
 from pathlib import Path
 
 from sop_monitor.camera_utils import (
+    add_camera_source_arguments,
     draw_monitor_overlay,
     has_any_roi,
     match_detection_to_hole,
     open_camera,
+    resolve_camera_source,
 )
 from sop_monitor.config import load_config
 from sop_monitor.event_log import JsonlEventLogger
@@ -30,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     """创建命令行参数解析器。"""
 
     parser = argparse.ArgumentParser(description="摄像头实时 SOP 监控")
-    parser.add_argument("--camera", type=int, default=0, help="摄像头编号，内置摄像头通常是 0。")
+    add_camera_source_arguments(parser)
     parser.add_argument("--config", required=True, help="SOP 配置 JSON。")
     parser.add_argument("--model", required=True, help="YOLO 模型路径，例如 weights/best.pt。")
     parser.add_argument("--events", default="runs/camera_events.jsonl", help="事件日志输出路径。")
@@ -62,7 +64,8 @@ def main() -> int:
     if events_path.exists():
         events_path.unlink()
 
-    capture = open_camera(args.camera, args.width, args.height)
+    camera_source = resolve_camera_source(args)
+    capture = open_camera(camera_source, args.width, args.height)
     model = YOLO(str(model_path))
     state_machine = SopStateMachine(config)
     logger = JsonlEventLogger(events_path)

@@ -190,8 +190,29 @@ Windows：
 
 - 这是现场部署优先使用的入口，不需要打开浏览器。
 - 窗口启动后会自动打开摄像头预览。
-- `--camera 0` 通常是笔记本或工控机默认摄像头，外接摄像头可能是 `1` 或 `2`。
+- `--camera` 支持本地编号、RTSP 地址或视频路径。
 - 当前桌面客户端先完成界面和摄像头预览，真实 SOP 开始/暂停/恢复/复位控制后续接入。
+
+海康 RTSP 摄像头启动示例：
+
+```bash
+source scripts/env.sh
+.venv/bin/python -m sop_monitor.desktop_app \
+  --config configs/sample_sop.json \
+  --hikvision-ip 192.168.114.222 \
+  --hikvision-user admin \
+  --hikvision-password '<password>' \
+  --hikvision-channel 101
+```
+
+也可以直接传完整 RTSP 地址：
+
+```bash
+source scripts/env.sh
+.venv/bin/python -m sop_monitor.desktop_app \
+  --config configs/sample_sop.json \
+  --camera 'rtsp://admin:<password>@192.168.114.222:554/Streaming/Channels/101'
+```
 
 开启客户端手部监控展示：
 
@@ -199,7 +220,9 @@ Windows：
 source scripts/env.sh
 .venv/bin/python -m sop_monitor.desktop_app \
   --config configs/sample_sop.json \
-  --camera 0 \
+  --hikvision-ip 192.168.114.222 \
+  --hikvision-user admin \
+  --hikvision-password '<password>' \
   --hands \
   --hand-model models/hand_landmarker.task
 ```
@@ -243,10 +266,22 @@ source scripts/env.sh
 .venv/bin/python -m sop_monitor.camera_preview --camera 0
 ```
 
+预览海康 RTSP 摄像头：
+
+```bash
+source scripts/env.sh
+.venv/bin/python -m sop_monitor.camera_preview \
+  --hikvision-ip 192.168.114.222 \
+  --hikvision-user admin \
+  --hikvision-password '<password>' \
+  --hikvision-channel 101
+```
+
 说明：
 
 - `--camera 0` 通常是笔记本自带摄像头。
 - 外接 USB 摄像头可能是 `--camera 1` 或 `--camera 2`。
+- 海康主码流通常是 `--hikvision-channel 101`，子码流通常是 `102`。
 - macOS 第一次打开摄像头时，需要允许终端/Python 访问摄像头。
 - 预览窗口按 `q` 或 `Esc` 退出。
 
@@ -263,7 +298,9 @@ weights/best.pt
 ```bash
 source scripts/env.sh
 .venv/bin/python -m sop_monitor.camera_monitor \
-  --camera 0 \
+  --hikvision-ip 192.168.114.222 \
+  --hikvision-user admin \
+  --hikvision-password '<password>' \
   --config configs/sample_sop.json \
   --model weights/best.pt \
   --display
@@ -287,7 +324,9 @@ source scripts/env.sh
 ```bash
 source scripts/env.sh
 .venv/bin/python -m sop_monitor.camera_monitor \
-  --camera 0 \
+  --hikvision-ip 192.168.114.222 \
+  --hikvision-user admin \
+  --hikvision-password '<password>' \
   --config configs/sample_sop.json \
   --model weights/best.pt \
   --display \

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from sop_monitor.camera_utils import add_camera_source_arguments, open_camera, resolve_camera_source
 from sop_monitor.config import load_config
 from sop_monitor.models import MonitorConfig
 
@@ -19,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(description="AI SOP PySide6 桌面客户端")
     parser.add_argument("--config", default="configs/sample_sop.json", help="SOP 配置 JSON。")
-    parser.add_argument("--camera", type=int, default=0, help="摄像头编号，内置摄像头通常是 0。")
+    add_camera_source_arguments(parser)
     parser.add_argument("--width", type=int, default=1280, help="摄像头采集宽度。")
     parser.add_argument("--height", type=int, default=720, help="摄像头采集高度。")
     parser.add_argument("--hands", action="store_true", help="开启 MediaPipe 手部监控展示。")
@@ -32,12 +33,13 @@ def main() -> int:
 
     args = build_parser().parse_args()
     config = load_config(args.config)
-    return run_qt_app(config, args.camera, args.width, args.height, args.hands, args.hand_model)
+    camera_source = resolve_camera_source(args)
+    return run_qt_app(config, camera_source, args.width, args.height, args.hands, args.hand_model)
 
 
 def run_qt_app(
     config: MonitorConfig,
-    camera_index: int,
+    camera_source: str,
     width: int | None,
     height: int | None,
     enable_hands: bool,
@@ -115,7 +117,7 @@ def run_qt_app(
 
         def __init__(
             self,
-            camera_index: int,
+            camera_source: str,
             width: int | None,
             height: int | None,
             config: MonitorConfig,
@@ -123,7 +125,7 @@ def run_qt_app(
             hand_model: str,
         ):
             super().__init__()
-            self.camera_index = camera_index
+            self.camera_source = camera_source
             self.width = width
             self.height = height
             self.config = config
@@ -137,13 +139,10 @@ def run_qt_app(
             self._running = False
 
         def run(self):
-            capture = cv2.VideoCapture(self.camera_index)
-            if self.width:
-                capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-            if self.height:
-                capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-            if not capture.isOpened():
-                self.error_ready.emit(f"无法打开摄像头 {self.camera_index}")
+            try:
+                capture = open_camera(self.camera_source, self.width, self.height)
+            except RuntimeError as exc:
+                self.error_ready.emit(str(exc))
                 return
 
             hand_detector = None
@@ -459,7 +458,7 @@ def run_qt_app(
         def start_camera(self):
             if self.camera_active:
                 return
-            self.camera_worker = CameraWorker(camera_index, width, height, self.config, enable_hands, hand_model)
+            self.camera_worker = CameraWorker(camera_source, width, height, self.config, enable_hands, hand_model)
             self.camera_worker.frame_ready.connect(self.update_frame)
             self.camera_worker.error_ready.connect(self.show_camera_error)
             self.camera_worker.hand_status_ready.connect(self.update_hand_status)
