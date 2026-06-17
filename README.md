@@ -192,6 +192,7 @@ Windows：
 - 窗口启动后会自动打开摄像头预览。
 - `--camera` 支持本地编号、RTSP 地址或视频路径。
 - 当前桌面客户端先完成界面和摄像头预览，真实 SOP 开始/暂停/恢复/复位控制后续接入。
+- 客户端实时监控建议优先使用海康子码流 `102` 降低延迟；需要高分辨率标定或截图时再切主码流 `101`。
 
 海康 RTSP 摄像头启动示例：
 
@@ -202,7 +203,7 @@ source scripts/env.sh
   --hikvision-ip 192.168.114.222 \
   --hikvision-user admin \
   --hikvision-password '<password>' \
-  --hikvision-channel 101
+  --hikvision-channel 102
 ```
 
 也可以直接传完整 RTSP 地址：
@@ -224,6 +225,7 @@ source scripts/env.sh
   --hikvision-user admin \
   --hikvision-password '<password>' \
   --hands \
+  --hand-interval 5 \
   --hand-model models/hand_landmarker.task
 ```
 
@@ -232,6 +234,7 @@ source scripts/env.sh
 - 手部监控只影响画面展示和右侧“手部状态”，不参与 SOP 顺序和孔位完成判定。
 - 画面中检测到手时会叠加手部框、关键点和骨架。
 - 如果手部框接近当前孔位 ROI，右侧状态会显示“靠近区域”。
+- `--hand-interval` 表示每隔多少帧做一次手部检测，数值越大延迟越低但手部刷新越慢。
 
 ### 2. JSONL 回放验证
 

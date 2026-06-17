@@ -8,6 +8,7 @@ from argparse import Namespace
 
 from sop_monitor.camera_utils import (
     build_hikvision_rtsp_url,
+    is_rtsp_source,
     match_detection_to_hole,
     normalize_camera_source,
     resolve_camera_source,
@@ -22,6 +23,10 @@ class CameraUtilsTest(unittest.TestCase):
     def test_rtsp_camera_source_stays_string(self) -> None:
         source = "rtsp://admin:pwd@192.168.1.10:554/Streaming/Channels/101"
         self.assertEqual(normalize_camera_source(source), source)
+
+    def test_is_rtsp_source(self) -> None:
+        self.assertTrue(is_rtsp_source("rtsp://admin:pwd@192.168.1.10/stream"))
+        self.assertFalse(is_rtsp_source("0"))
 
     def test_build_hikvision_rtsp_url(self) -> None:
         self.assertEqual(

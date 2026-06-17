@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Iterable
 
 from sop_monitor.models import Detection, MonitorConfig, StepSpec
@@ -50,6 +51,12 @@ def normalize_camera_source(source: int | str) -> int | str:
     return text
 
 
+def is_rtsp_source(source: int | str) -> bool:
+    """判断摄像头来源是否为 RTSP 流。"""
+
+    return isinstance(source, str) and source.strip().lower().startswith("rtsp://")
+
+
 def build_hikvision_rtsp_url(
     ip: str,
     user: str,
@@ -67,7 +74,14 @@ def open_camera(source: int | str, width: int | None = None, height: int | None 
     import cv2
 
     camera_source = normalize_camera_source(source)
-    capture = cv2.VideoCapture(camera_source)
+    if is_rtsp_source(camera_source):
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000",
+        )
+        capture = cv2.VideoCapture(camera_source, cv2.CAP_FFMPEG)
+    else:
+        capture = cv2.VideoCapture(camera_source)
     capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     if width:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)

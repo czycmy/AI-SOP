@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height", type=int, default=720, help="摄像头采集高度。")
     parser.add_argument("--hands", action="store_true", help="开启 MediaPipe 手部监控展示。")
     parser.add_argument("--hand-model", default="models/hand_landmarker.task", help="MediaPipe 手部模型路径。")
+    parser.add_argument("--hand-interval", type=int, default=5, help="手部检测间隔帧数，值越大延迟越低但手部刷新越慢。")
     return parser
 
 
@@ -34,7 +35,7 @@ def main() -> int:
     args = build_parser().parse_args()
     config = load_config(args.config)
     camera_source = resolve_camera_source(args)
-    return run_qt_app(config, camera_source, args.width, args.height, args.hands, args.hand_model)
+    return run_qt_app(config, camera_source, args.width, args.height, args.hands, args.hand_model, args.hand_interval)
 
 
 def run_qt_app(
@@ -44,6 +45,7 @@ def run_qt_app(
     height: int | None,
     enable_hands: bool,
     hand_model: str,
+    hand_interval: int,
 ) -> int:
     """延迟导入 PySide6 并启动应用，避免测试环境没有 Qt 时影响核心模块。"""
 
@@ -123,6 +125,7 @@ def run_qt_app(
             config: MonitorConfig,
             enable_hands: bool,
             hand_model: str,
+            hand_interval: int,
         ):
             super().__init__()
             self.camera_source = camera_source
@@ -131,6 +134,7 @@ def run_qt_app(
             self.config = config
             self.enable_hands = enable_hands
             self.hand_model = hand_model
+            self.hand_interval = max(1, hand_interval)
             self._running = True
 
         def stop(self):
@@ -162,7 +166,7 @@ def run_qt_app(
                         self.error_ready.emit("读取摄像头画面失败")
                         break
                     frame_index += 1
-                    if hand_detector:
+                    if hand_detector and frame_index % self.hand_interval == 0:
                         try:
                             hands = hand_detector.detect(frame, timestamp_ms=frame_index * 33)
                             near_active_roi = any_hand_near_roi(
@@ -458,7 +462,15 @@ def run_qt_app(
         def start_camera(self):
             if self.camera_active:
                 return
-            self.camera_worker = CameraWorker(camera_source, width, height, self.config, enable_hands, hand_model)
+            self.camera_worker = CameraWorker(
+                camera_source,
+                width,
+                height,
+                self.config,
+                enable_hands,
+                hand_model,
+                hand_interval,
+            )
             self.camera_worker.frame_ready.connect(self.update_frame)
             self.camera_worker.error_ready.connect(self.show_camera_error)
             self.camera_worker.hand_status_ready.connect(self.update_hand_status)
@@ -490,7 +502,7 @@ def run_qt_app(
             scaled = pixmap.scaled(
                 self.video_label.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+                Qt.TransformationMode.FastTransformation,
             )
             self.video_label.setPixmap(scaled)
 
