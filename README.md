@@ -19,7 +19,9 @@
 - PySide6 桌面客户端：展示区域 SOP、装配画面、总览状态、异常记录。
 - 摄像头预览：用于确认摄像头编号和系统权限。
 - YOLO 实时检测入口：接入训练好的 `best.pt` 后可做摄像头实时 SOP 监控。
-- MediaPipe 手部监控展示：可选开启手部关键点检测并叠加到客户端画面。
+- 低延迟取流后端：OpenCV/RTSP 默认只保留最新帧，避免旧帧堆积。
+- 海康 SDK 后端：Windows 下可通过 `--camera-backend hikvision-sdk` 使用 HCNetSDK/PlayCtrl 取流。
+- MediaPipe 手部监控展示：可选功能，现场默认不建议开启，不参与 SOP 判定。
 
 ## 目录结构
 
@@ -34,6 +36,7 @@
 │   └── env.sh
 ├── sop_monitor/
 │   ├── __init__.py
+│   ├── camera_source.py
 │   ├── camera_monitor.py
 │   ├── camera_preview.py
 │   ├── camera_utils.py
@@ -49,7 +52,11 @@
 │   ├── test_camera_utils.py
 │   ├── test_hand_detector.py
 │   └── test_state_machine.py
+├── third_party/
+│   └── hikvision/
+│       └── README.md
 ├── requirements.txt
+├── requirements-windows.txt
 └── README.md
 ```
 
@@ -64,7 +71,7 @@
 
 - `examples/normal_run.jsonl`
   - 正常装配流程的逐帧检测结果样例。
-  - 用于验证状态机能按顺序完成 R1、R2。
+  - 用于验证状态机能按顺序完成 R1 内的 3 个孔位。
 
 - `examples/error_run.jsonl`
   - 异常流程的逐帧检测结果样例。
@@ -75,6 +82,11 @@
 - `requirements.txt`
   - Python 依赖列表。
   - 当前包含 `PySide6`、`ultralytics`、`opencv-python`、`onnxruntime`、`mediapipe`。
+
+- `requirements-windows.txt`
+  - Windows 现场部署依赖。
+  - 不包含 `torch`，需要先按 PyTorch 官方命令单独安装 CUDA 版 PyTorch。
+  - 不默认包含 `mediapipe`，现场主线先关闭手部监控。
 
 - `scripts/env.sh`
   - 项目本地运行环境变量。
@@ -115,6 +127,12 @@
   - 当前 `开始监控`、`暂停监控`、`恢复监控`、`结束/复位`、`异常确认` 是界面预留。
 
 ### 摄像头和视觉模块
+
+- `sop_monitor/camera_source.py`
+  - 摄像头后端抽象层。
+  - `OpenCvFrameSource` 支持本地摄像头和离线视频。
+  - `LatestFrameOpenCvSource` 支持 RTSP 最新帧缓存，推理慢时丢旧帧降低延迟。
+  - `HikvisionSdkFrameSource` 支持 Windows 海康 HCNetSDK/PlayCtrl 取流。
 
 - `sop_monitor/camera_preview.py`
   - 摄像头预览命令。
@@ -162,6 +180,19 @@ source scripts/env.sh
 
 ```bat
 python -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+```
+
+如果是 Windows + NVIDIA GPU，先安装 CUDA 版 PyTorch，再安装项目依赖。示例：
+
+```bat
+.venv\Scripts\python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+.venv\Scripts\python -m pip install -r requirements-windows.txt
+```
+
+如果暂时只做普通开发、不使用 GPU，也可以用 `requirements.txt`：
+
+```bat
 .venv\Scripts\python -m pip install -r requirements.txt
 ```
 
@@ -183,27 +214,45 @@ source scripts/env.sh
 Windows：
 
 ```bat
-.venv\Scripts\python -m sop_monitor.desktop_app --config configs/sample_sop.json --camera 0
+.venv\Scripts\python -m sop_monitor.desktop_app --config configs\sample_sop.json --camera 0
 ```
 
 说明：
 
 - 这是现场部署优先使用的入口，不需要打开浏览器。
 - 窗口启动后会自动打开摄像头预览。
-- `--camera` 支持本地编号、RTSP 地址或视频路径。
-- 当前桌面客户端先完成界面和摄像头预览，真实 SOP 开始/暂停/恢复/复位控制后续接入。
+- `--camera-backend opencv` 是默认后端，支持本地编号、RTSP 地址或视频路径。
+- `--camera-backend hikvision-sdk` 是 Windows 海康 SDK 后端，需要放好 SDK DLL。
+- 当前桌面客户端已支持传入 YOLO 模型后做 ROI/SOP 实时判断；开始/暂停/恢复/复位按钮仍是界面预留。
 - 客户端实时监控建议优先使用海康子码流 `102` 降低延迟；需要高分辨率标定或截图时再切主码流 `101`。
 
-海康 RTSP 摄像头启动示例：
+海康 RTSP/OpenCV 后端启动示例：
 
 ```bash
 source scripts/env.sh
 .venv/bin/python -m sop_monitor.desktop_app \
+  --camera-backend opencv \
   --config configs/sample_sop.json \
+  --model runs/installed_part_roi/weights/best.pt \
   --hikvision-ip 192.168.114.222 \
   --hikvision-user admin \
   --hikvision-password '<password>' \
-  --hikvision-channel 102
+  --hikvision-channel 102 \
+  --conf 0.35
+```
+
+Windows 写法：
+
+```bat
+.venv\Scripts\python -m sop_monitor.desktop_app ^
+  --camera-backend opencv ^
+  --config configs\calibrated_sop.json ^
+  --model runs\installed_part_roi\weights\best.pt ^
+  --hikvision-ip 192.168.114.222 ^
+  --hikvision-user admin ^
+  --hikvision-password "<password>" ^
+  --hikvision-channel 102 ^
+  --conf 0.35
 ```
 
 也可以直接传完整 RTSP 地址：
@@ -211,9 +260,46 @@ source scripts/env.sh
 ```bash
 source scripts/env.sh
 .venv/bin/python -m sop_monitor.desktop_app \
+  --camera-backend opencv \
   --config configs/sample_sop.json \
   --camera 'rtsp://admin:<password>@192.168.114.222:554/Streaming/Channels/101'
 ```
+
+海康 SDK 后端启动示例，仅 Windows 可用：
+
+```bat
+.venv\Scripts\python -m sop_monitor.desktop_app ^
+  --camera-backend hikvision-sdk ^
+  --hikvision-sdk-dir third_party\hikvision ^
+  --hikvision-ip 192.168.114.222 ^
+  --hikvision-user admin ^
+  --hikvision-password "<password>" ^
+  --hikvision-port 8000 ^
+  --hikvision-channel 102 ^
+  --config configs\calibrated_sop.json ^
+  --model runs\installed_part_roi\weights\best.pt ^
+  --conf 0.35
+```
+
+SDK 后端需要把海康 Windows 64 位 SDK 的 DLL 放到：
+
+```text
+third_party\hikvision\
+```
+
+常见 DLL 包括：
+
+```text
+HCNetSDK.dll
+PlayCtrl.dll
+HCCore.dll
+hpr.dll
+libcrypto-*.dll
+libssl-*.dll
+其他 SDK 随包 DLL
+```
+
+`--hikvision-channel 101` 表示 1 通道主码流，`102` 表示 1 通道子码流。SDK 登录端口通常是 `8000`，RTSP 端口通常是 `554`。
 
 开启客户端手部监控展示：
 
@@ -376,13 +462,32 @@ source scripts/env.sh
 - `stable_frames_required`：连续多少帧确认后判定孔位完成。
 - `missing_timeout_frames`：当前孔位等待超过多少帧仍未完成时记录漏装超时。
 - `regions`：物理区域列表，按顺序执行。
-- `region_id`：区域 ID，例如 `R1`、`R2`。
+- `region_id`：区域 ID，例如 `R1`。
 - `steps`：区域内孔位步骤，按 SOP 顺序执行。
 - `hole_id`：孔位 ID，例如 `H1`、`H2`。
 - `part_type`：兼容字段；当前阶段不校验零件类型，可统一写 `installed_part`。
 - `roi`：孔位在摄像头画面中的归一化位置 `[x1, y1, x2, y2]`。
 
 ROI 需要基于真实现场相机画面标定。当前 `sample_sop.json` 中的 ROI 是示例值，不代表真实工位。
+
+## ROI 标定
+
+从固定相机位图片中框选每个孔位的判断区域：
+
+```bash
+.venv/bin/python scripts/roi_calibrator.py \
+  --image dataset/frames_data/luzhi_f001980_t0066.00s.jpg \
+  --config configs/sample_sop.json \
+  --output configs/calibrated_sop.json
+```
+
+说明：
+
+- 工具会按 SOP 顺序依次提示框选 `R1-H1`、`R1-H2` 等孔位。
+- 鼠标拖拽框选 ROI，按 Enter 或 Space 确认。
+- 如果当前孔位不想修改，直接取消/不框选会保留原 ROI。
+- 输出坐标是归一化 `[x1, y1, x2, y2]`，可直接用于后续检测。
+- 建议 ROI 只覆盖当前孔位安装后零件会出现的位置，避免包含旁边已有的相似零件。
 
 ## 检测结果 JSONL 格式
 
@@ -466,20 +571,46 @@ source scripts/env.sh
 
 - Python 代码跨平台。
 - 现场主界面使用 PySide6 桌面客户端，不需要操作浏览器。
-- 摄像头编号需要现场测试，通常是 `0`、`1`、`2`。
+- 摄像头后端支持 `opencv` 和 `hikvision-sdk`。
+- `opencv` 后端支持本地摄像头、视频文件和 RTSP，并对 RTSP 做最新帧缓存以降低堆积延迟。
+- `hikvision-sdk` 后端需要 Windows 64 位海康 SDK DLL，DLL 放在 `third_party\hikvision\`。
 - Windows 命令中的 Python 路径使用 `.venv\Scripts\python`。
-- 如果有 NVIDIA GPU，YOLO 推理和训练速度会更好。
+- 如果有 NVIDIA GPU，建议单独安装 CUDA 版 PyTorch，再安装 `requirements-windows.txt`。
+- 现场主线建议先关闭 `--hands`，手部监控不参与 SOP 判定且会增加延迟。
 
-Windows 运行示例：
+Windows RTSP/OpenCV 运行示例：
 
 ```bat
-.venv\Scripts\python -m sop_monitor.desktop_app --camera 0
+.venv\Scripts\python -m sop_monitor.desktop_app ^
+  --camera-backend opencv ^
+  --config configs\calibrated_sop.json ^
+  --model runs\installed_part_roi\weights\best.pt ^
+  --hikvision-ip 192.168.114.222 ^
+  --hikvision-user admin ^
+  --hikvision-password "<password>" ^
+  --hikvision-channel 102 ^
+  --conf 0.35
+```
+
+Windows 海康 SDK 运行示例：
+
+```bat
+.venv\Scripts\python -m sop_monitor.desktop_app ^
+  --camera-backend hikvision-sdk ^
+  --hikvision-sdk-dir third_party\hikvision ^
+  --hikvision-ip 192.168.114.222 ^
+  --hikvision-user admin ^
+  --hikvision-password "<password>" ^
+  --hikvision-port 8000 ^
+  --hikvision-channel 102 ^
+  --config configs\calibrated_sop.json ^
+  --model runs\installed_part_roi\weights\best.pt ^
+  --conf 0.35
 ```
 
 ## 当前限制
 
-- 还没有真实工位数据。
-- 还没有训练好的 YOLO 模型。
 - `configs/sample_sop.json` 里的 ROI 是示例值，需要现场标定。
 - PySide6 客户端监控按钮目前只做界面预留，还没有接入生产控制接口。
 - 后端手部检测为可选功能，当前不参与 SOP 判定。
+- 海康 SDK 后端需要在 Windows 真机、真实 DLL 和真实相机网络下验证。
