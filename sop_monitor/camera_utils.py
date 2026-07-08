@@ -15,11 +15,23 @@ from sop_monitor.models import Detection, MonitorConfig, StepSpec
 def add_camera_source_arguments(parser) -> None:
     """为命令行工具添加统一的摄像头来源参数。"""
 
+    parser.add_argument(
+        "--camera-backend",
+        default="opencv",
+        choices=["opencv", "hikvision-sdk"],
+        help="摄像头后端：opencv 使用本地/RTSP；hikvision-sdk 预留海康 SDK 低延迟取流。",
+    )
     parser.add_argument("--camera", default="0", help="摄像头来源：本地编号、RTSP 地址或视频路径。")
     parser.add_argument("--hikvision-ip", default=None, help="海康摄像头 IP；提供后会自动生成 RTSP 地址。")
     parser.add_argument("--hikvision-user", default="admin", help="海康摄像头账号。")
     parser.add_argument("--hikvision-password", default=None, help="海康摄像头密码。")
+    parser.add_argument("--hikvision-port", type=int, default=8000, help="海康 SDK 登录端口，通常是 8000。")
     parser.add_argument("--hikvision-channel", default="101", help="海康 RTSP 通道，主码流通常是 101。")
+    parser.add_argument(
+        "--hikvision-sdk-dir",
+        default="third_party/hikvision",
+        help="海康 Windows SDK DLL 目录，使用 hikvision-sdk 后端时需要。",
+    )
 
 
 def resolve_camera_source(args) -> str:

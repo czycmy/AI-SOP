@@ -1,8 +1,10 @@
 """AI SOP PySide6 桌面客户端。
 
 本文件提供现场部署用的原生桌面界面：自动打开摄像头预览，展示区域 SOP、
-装配画面、状态概览和异常记录。当前版本先完成客户端框架和摄像头画面接入，
-监控控制按钮只做界面预留，后续再接入真实的开始、暂停、恢复、复位和异常确认逻辑。
+装配画面、状态概览和异常记录。当前版本自动打开摄像头预览；传入 YOLO
+模型后会实时检测已装零件，根据孔位 ROI 映射到 SOP 步骤，并驱动表格、
+状态和异常记录刷新。监控控制按钮只做界面预留，后续再接入真实的开始、
+暂停、恢复、复位和异常确认逻辑。
 """
 
 from __future__ import annotations
@@ -10,7 +12,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from sop_monitor.camera_utils import add_camera_source_arguments, open_camera, resolve_camera_source
+from sop_monitor.camera_source import CameraSourceSpec, create_frame_source
+from sop_monitor.camera_utils import add_camera_source_arguments, resolve_camera_source
 from sop_monitor.config import load_config
 from sop_monitor.models import MonitorConfig
 
@@ -23,6 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_camera_source_arguments(parser)
     parser.add_argument("--width", type=int, default=1280, help="摄像头采集宽度。")
     parser.add_argument("--height", type=int, default=720, help="摄像头采集高度。")
+    parser.add_argument("--model", default=None, help="YOLO 模型路径；提供后客户端会启用 SOP 实时检测。")
+    parser.add_argument("--conf", type=float, default=0.5, help="YOLO 检测置信度阈值。")
     parser.add_argument("--hands", action="store_true", help="开启 MediaPipe 手部监控展示。")
     parser.add_argument("--hand-model", default="models/hand_landmarker.task", help="MediaPipe 手部模型路径。")
     parser.add_argument("--hand-interval", type=int, default=5, help="手部检测间隔帧数，值越大延迟越低但手部刷新越慢。")
@@ -35,14 +40,34 @@ def main() -> int:
     args = build_parser().parse_args()
     config = load_config(args.config)
     camera_source = resolve_camera_source(args)
-    return run_qt_app(config, camera_source, args.width, args.height, args.hands, args.hand_model, args.hand_interval)
+    camera_spec = CameraSourceSpec(
+        backend=args.camera_backend,
+        source=camera_source,
+        width=args.width,
+        height=args.height,
+        hikvision_ip=args.hikvision_ip,
+        hikvision_user=args.hikvision_user,
+        hikvision_password=args.hikvision_password,
+        hikvision_port=args.hikvision_port,
+        hikvision_channel=args.hikvision_channel,
+        hikvision_sdk_dir=args.hikvision_sdk_dir,
+    )
+    return run_qt_app(
+        config,
+        camera_spec,
+        args.model,
+        args.conf,
+        args.hands,
+        args.hand_model,
+        args.hand_interval,
+    )
 
 
 def run_qt_app(
     config: MonitorConfig,
-    camera_source: str,
-    width: int | None,
-    height: int | None,
+    camera_spec: CameraSourceSpec,
+    model_path: str | None,
+    conf: float,
     enable_hands: bool,
     hand_model: str,
     hand_interval: int,
@@ -73,7 +98,11 @@ def run_qt_app(
         raise RuntimeError("缺少 PySide6，请先安装依赖：.venv/bin/python -m pip install -r requirements.txt") from exc
 
     import cv2
+    from sop_monitor.camera_monitor import predict_frame
+    from sop_monitor.camera_utils import draw_monitor_overlay, has_any_roi
     from sop_monitor.hand_detector import MediaPipeHandDetector, any_hand_near_roi, draw_hand_overlay
+    from sop_monitor.models import EventType, FrameObservation
+    from sop_monitor.state_machine import SopStateMachine
 
     class PieChartWidget(QWidget):
         """右侧加工统计的小型饼图。"""
@@ -116,22 +145,23 @@ def run_qt_app(
         frame_ready = Signal(QImage)
         error_ready = Signal(str)
         hand_status_ready = Signal(str)
+        monitor_state_ready = Signal(object)
 
         def __init__(
             self,
-            camera_source: str,
-            width: int | None,
-            height: int | None,
+            camera_spec: CameraSourceSpec,
             config: MonitorConfig,
+            model_path: str | None,
+            conf: float,
             enable_hands: bool,
             hand_model: str,
             hand_interval: int,
         ):
             super().__init__()
-            self.camera_source = camera_source
-            self.width = width
-            self.height = height
+            self.camera_spec = camera_spec
             self.config = config
+            self.model_path = model_path
+            self.conf = conf
             self.enable_hands = enable_hands
             self.hand_model = hand_model
             self.hand_interval = max(1, hand_interval)
@@ -144,10 +174,28 @@ def run_qt_app(
 
         def run(self):
             try:
-                capture = open_camera(self.camera_source, self.width, self.height)
-            except RuntimeError as exc:
+                frame_source = create_frame_source(self.camera_spec)
+            except (RuntimeError, NotImplementedError) as exc:
                 self.error_ready.emit(str(exc))
                 return
+
+            yolo_model = None
+            state_machine = None
+            if self.model_path:
+                try:
+                    from pathlib import Path
+
+                    from ultralytics import YOLO
+
+                    if not Path(self.model_path).exists():
+                        raise FileNotFoundError(f"找不到 YOLO 模型文件：{self.model_path}")
+                    if not has_any_roi(self.config):
+                        raise ValueError("SOP 配置缺少孔位 ROI，无法启用实时检测。")
+                    yolo_model = YOLO(str(self.model_path))
+                    state_machine = SopStateMachine(self.config)
+                    self.monitor_state_ready.emit({"status": "监控中"})
+                except Exception as exc:  # noqa: BLE001 - 模型异常时仍保留摄像头预览。
+                    self.error_ready.emit(f"YOLO 检测启动失败：{exc}")
 
             hand_detector = None
             if self.enable_hands:
@@ -161,17 +209,51 @@ def run_qt_app(
             try:
                 frame_index = 0
                 while self._running:
-                    ok, frame = capture.read()
+                    ok, frame = frame_source.read()
                     if not ok:
-                        self.error_ready.emit("读取摄像头画面失败")
-                        break
+                        self.error_ready.emit("读取摄像头画面失败，等待新帧")
+                        self.msleep(30)
+                        continue
+                    if frame is None:
+                        self.msleep(30)
+                        continue
                     frame_index += 1
+                    detections = []
+                    events = []
+                    active_region_id = self.config.regions[0].region_id if self.config.regions else None
+                    active_hole_id = None
+                    active_roi = None
+
+                    if yolo_model and state_machine:
+                        try:
+                            detections = predict_frame(yolo_model, self.config, frame, self.conf)
+                            events = state_machine.update(FrameObservation(frame_index=frame_index, detections=detections))
+                            active_region = state_machine.active_region
+                            expected = state_machine.expected_step
+                            active_region_id = active_region.region_id if active_region else None
+                            active_hole_id = expected.hole_id if expected else None
+                            active_roi = expected.roi if expected else None
+                            draw_monitor_overlay(frame, self.config, detections, active_region_id, active_hole_id)
+                            self.monitor_state_ready.emit({
+                                "status": "完成" if state_machine.completed else "监控中",
+                                "active_region_id": active_region_id,
+                                "active_hole_id": active_hole_id,
+                                "events": events,
+                                "frame_index": frame_index,
+                            })
+                        except Exception as exc:  # noqa: BLE001 - 单帧推理异常不应直接关闭客户端。
+                            self.error_ready.emit(f"YOLO 检测异常：{exc}")
+                            yolo_model = None
+                            state_machine = None
+
+                    if active_roi is None:
+                        active_roi = self._default_active_roi()
                     if hand_detector and frame_index % self.hand_interval == 0:
                         try:
                             hands = hand_detector.detect(frame, timestamp_ms=frame_index * 33)
                             near_active_roi = any_hand_near_roi(
                                 hands,
-                                self._active_roi(),
+                                active_roi,
                                 frame.shape[1],
                                 frame.shape[0],
                             )
@@ -202,9 +284,9 @@ def run_qt_app(
             finally:
                 if hand_detector:
                     hand_detector.close()
-                capture.release()
+                frame_source.release()
 
-        def _active_roi(self) -> tuple[float, float, float, float] | None:
+        def _default_active_roi(self) -> tuple[float, float, float, float] | None:
             if not self.config.regions or not self.config.regions[0].steps:
                 return None
             return self.config.regions[0].steps[0].roi
@@ -218,6 +300,11 @@ def run_qt_app(
             self.camera_worker: CameraWorker | None = None
             self.latest_image: QImage | None = None
             self.camera_active = False
+            self.step_rows: list[tuple[str, str]] = []
+            self.step_start_frames: dict[tuple[str, str], int] = {}
+            self.completed_keys: set[tuple[str, str]] = set()
+            self.abnormal_count = 0
+            self.stat_values: dict[str, QLabel] = {}
 
             self.setWindowTitle("AI SOP 监控台")
             self.resize(1440, 900)
@@ -367,16 +454,16 @@ def run_qt_app(
 
             count_layout = QGridLayout()
             count_layout.setSpacing(6)
-            count_layout.addWidget(self._stat_cell("加工量", "0"), 0, 0)
-            count_layout.addWidget(self._stat_cell("正常", "0"), 1, 0)
-            count_layout.addWidget(self._stat_cell("异常", "0"), 2, 0)
+            count_layout.addWidget(self._stat_cell("加工量", "0", "total"), 0, 0)
+            count_layout.addWidget(self._stat_cell("正常", "0", "normal"), 1, 0)
+            count_layout.addWidget(self._stat_cell("异常", "0", "abnormal"), 2, 0)
             layout.addLayout(count_layout, 1)
 
             self.stats_pie = PieChartWidget(normal_count=0, abnormal_count=0)
             layout.addWidget(self.stats_pie)
             return panel
 
-        def _stat_cell(self, label: str, value: str) -> QFrame:
+        def _stat_cell(self, label: str, value: str, key: str) -> QFrame:
             cell = QFrame()
             cell.setObjectName("statCell")
             layout = QHBoxLayout(cell)
@@ -385,6 +472,7 @@ def run_qt_app(
             label_widget.setObjectName("metricLabel")
             value_widget = QLabel(value)
             value_widget.setObjectName("metricValue")
+            self.stat_values[key] = value_widget
             layout.addWidget(label_widget)
             layout.addStretch(1)
             layout.addWidget(value_widget)
@@ -413,6 +501,7 @@ def run_qt_app(
                 for region in self.config.regions
                 for step in region.steps
             ]
+            self.step_rows = steps
             self.sop_table.setRowCount(len(steps))
             for row, (region_id, hole_id) in enumerate(steps):
                 status = "当前" if row == 0 else "等待"
@@ -463,10 +552,10 @@ def run_qt_app(
             if self.camera_active:
                 return
             self.camera_worker = CameraWorker(
-                camera_source,
-                width,
-                height,
+                camera_spec,
                 self.config,
+                model_path,
+                conf,
                 enable_hands,
                 hand_model,
                 hand_interval,
@@ -474,6 +563,7 @@ def run_qt_app(
             self.camera_worker.frame_ready.connect(self.update_frame)
             self.camera_worker.error_ready.connect(self.show_camera_error)
             self.camera_worker.hand_status_ready.connect(self.update_hand_status)
+            self.camera_worker.monitor_state_ready.connect(self.update_monitor_state)
             self.camera_worker.finished.connect(self.on_camera_finished)
             self.camera_active = True
             self.camera_btn.setText("关闭摄像头")
@@ -514,6 +604,75 @@ def run_qt_app(
         def show_camera_error(self, message: str):
             self.video_label.setText(message)
             self._set_summary_value(self.status_label, "摄像头异常")
+
+        def update_monitor_state(self, payload: object):
+            """根据后台检测线程返回的状态刷新顶部、SOP 表格和异常记录。"""
+
+            if not isinstance(payload, dict):
+                return
+
+            status = str(payload.get("status", "监控中"))
+            active_region_id = payload.get("active_region_id")
+            active_hole_id = payload.get("active_hole_id")
+            frame_index = int(payload.get("frame_index", 0) or 0)
+
+            if active_region_id:
+                self._set_summary_value(self.region_label, str(active_region_id))
+            if active_hole_id:
+                self._set_summary_value(self.hole_label, str(active_hole_id))
+            self._set_summary_value(self.status_label, status)
+
+            for event in payload.get("events", []):
+                if event.event_type == EventType.STEP_COMPLETED:
+                    key = (event.region_id, event.expected_hole_id or "")
+                    self.completed_keys.add(key)
+                    self._update_step_result(key, "完成", frame_index)
+                elif event.event_type in {EventType.ORDER_ERROR, EventType.MISSING_PART}:
+                    self.abnormal_count += 1
+                    key = (event.region_id, event.expected_hole_id or "")
+                    self._update_step_result(key, "异常", frame_index)
+                    self._append_abnormal_event(event.message)
+
+            if active_region_id and active_hole_id:
+                self._mark_active_step((str(active_region_id), str(active_hole_id)), frame_index)
+
+            self._refresh_stats()
+
+        def _mark_active_step(self, active_key: tuple[str, str], frame_index: int):
+            for row, key in enumerate(self.step_rows):
+                if key in self.completed_keys:
+                    continue
+                if key == active_key:
+                    self.step_start_frames.setdefault(key, frame_index)
+                    self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{key[0]}-{key[1]}", "装配确认", "当前", "0.0s")
+                else:
+                    self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{key[0]}-{key[1]}", "装配确认", "等待", "-")
+
+        def _update_step_result(self, key: tuple[str, str], result: str, frame_index: int):
+            if key not in self.step_rows:
+                return
+            row = self.step_rows.index(key)
+            start_frame = self.step_start_frames.get(key)
+            duration = "-"
+            if start_frame is not None and frame_index:
+                duration = f"{max(0, frame_index - start_frame) / 30:.1f}s"
+            self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{key[0]}-{key[1]}", "装配确认", result, duration)
+
+        def _append_abnormal_event(self, message: str):
+            if self.event_list.count() == 1 and self.event_list.item(0).text() == "暂无异常":
+                self.event_list.clear()
+            self.event_list.insertItem(0, message)
+            self.event_list.scrollToTop()
+
+        def _refresh_stats(self):
+            normal_count = len(self.completed_keys)
+            total = normal_count + self.abnormal_count
+            self.stat_values["total"].setText(str(total))
+            self.stat_values["normal"].setText(str(normal_count))
+            self.stat_values["abnormal"].setText(str(self.abnormal_count))
+            self.stats_pie.normal_count = normal_count
+            self.stats_pie.abnormal_count = self.abnormal_count
+            self.stats_pie.update()
 
         def update_hand_status(self, status: str):
             self._set_summary_value(self.hand_metric, status)
