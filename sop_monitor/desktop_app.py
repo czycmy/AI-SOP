@@ -1,16 +1,18 @@
 """AI SOP PySide6 桌面客户端。
 
 本文件提供现场部署用的原生桌面界面：自动打开摄像头预览，展示区域 SOP、
-装配画面、状态概览和异常记录。当前版本自动打开摄像头预览；传入 YOLO
-模型后会实时检测已装零件，根据孔位 ROI 映射到 SOP 步骤，并驱动表格、
-状态和异常记录刷新。监控控制按钮只做界面预留，后续再接入真实的开始、
-暂停、恢复、复位和异常确认逻辑。
+装配画面、状态概览和异常记录。传入 YOLO 模型后，后台根据孔位 ROI 判断零件
+落位和 L 型工具紧固过程，但客户端只显示干净画面，不展示 ROI 或检测框。
+监控控制按钮只做界面预留，后续再接入真实控制逻辑。
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+import time
+from datetime import datetime
+from pathlib import Path
 
 from sop_monitor.camera_source import CameraSourceSpec, create_frame_source
 from sop_monitor.camera_utils import add_camera_source_arguments, resolve_camera_source
@@ -27,7 +29,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=1280, help="摄像头采集宽度。")
     parser.add_argument("--height", type=int, default=720, help="摄像头采集高度。")
     parser.add_argument("--model", default=None, help="YOLO 模型路径；提供后客户端会启用 SOP 实时检测。")
-    parser.add_argument("--conf", type=float, default=0.5, help="YOLO 检测置信度阈值。")
+    parser.add_argument("--conf", type=float, default=0.35, help="YOLO 检测置信度阈值。")
+    parser.add_argument(
+        "--detect-interval",
+        type=int,
+        default=0,
+        help="YOLO 推理间隔帧数；0 表示本地视频自动用 3，实时摄像头用 1。",
+    )
     parser.add_argument("--hands", action="store_true", help="开启 MediaPipe 手部监控展示。")
     parser.add_argument("--hand-model", default="models/hand_landmarker.task", help="MediaPipe 手部模型路径。")
     parser.add_argument("--hand-interval", type=int, default=5, help="手部检测间隔帧数，值越大延迟越低但手部刷新越慢。")
@@ -57,6 +65,7 @@ def main() -> int:
         camera_spec,
         args.model,
         args.conf,
+        args.detect_interval,
         args.hands,
         args.hand_model,
         args.hand_interval,
@@ -68,6 +77,7 @@ def run_qt_app(
     camera_spec: CameraSourceSpec,
     model_path: str | None,
     conf: float,
+    detect_interval: int,
     enable_hands: bool,
     hand_model: str,
     hand_interval: int,
@@ -99,18 +109,18 @@ def run_qt_app(
 
     import cv2
     from sop_monitor.camera_monitor import predict_frame
-    from sop_monitor.camera_utils import draw_monitor_overlay, has_any_roi
+    from sop_monitor.camera_utils import draw_visible_detection_boxes, has_any_roi
     from sop_monitor.hand_detector import MediaPipeHandDetector, any_hand_near_roi, draw_hand_overlay
     from sop_monitor.models import EventType, FrameObservation
     from sop_monitor.state_machine import SopStateMachine
 
     class PieChartWidget(QWidget):
-        """右侧加工统计的小型饼图。"""
+        """右侧显示已加工孔位与计划孔位的进度环。"""
 
-        def __init__(self, normal_count: int = 0, abnormal_count: int = 0):
+        def __init__(self, completed_count: int = 0, planned_count: int = 0):
             super().__init__()
-            self.normal_count = normal_count
-            self.abnormal_count = abnormal_count
+            self.completed_count = completed_count
+            self.planned_count = planned_count
             self.setMinimumSize(86, 86)
             self.setMaximumHeight(112)
 
@@ -121,23 +131,21 @@ def run_qt_app(
 
             side = min(self.width(), self.height()) - 16
             rect = QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
-            total = self.normal_count + self.abnormal_count
-            if total <= 0:
+            if self.planned_count <= 0:
                 painter.setPen(QPen(QColor("#d9e1ea"), 10))
                 painter.drawEllipse(rect)
                 painter.setPen(QColor("#52606d"))
                 painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "0")
                 return
 
-            normal_span = int(360 * 16 * self.normal_count / total)
-            abnormal_span = 360 * 16 - normal_span
+            completed = min(self.completed_count, self.planned_count)
+            completed_span = int(360 * 16 * completed / self.planned_count)
+            painter.setPen(QPen(QColor("#d9e1ea"), 10))
+            painter.drawEllipse(rect)
             painter.setPen(QPen(QColor("#16a34a"), 10))
-            painter.drawArc(rect, 90 * 16, -normal_span)
-            if abnormal_span:
-                painter.setPen(QPen(QColor("#dc2626"), 10))
-                painter.drawArc(rect, 90 * 16 - normal_span, -abnormal_span)
+            painter.drawArc(rect, 90 * 16, -completed_span)
             painter.setPen(QColor("#1f2933"))
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(total))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{completed}/{self.planned_count}")
 
     class CameraWorker(QThread):
         """在独立线程中读取摄像头，避免阻塞 Qt 主界面。"""
@@ -153,6 +161,7 @@ def run_qt_app(
             config: MonitorConfig,
             model_path: str | None,
             conf: float,
+            detect_interval: int,
             enable_hands: bool,
             hand_model: str,
             hand_interval: int,
@@ -162,6 +171,7 @@ def run_qt_app(
             self.config = config
             self.model_path = model_path
             self.conf = conf
+            self.detect_interval = max(0, detect_interval)
             self.enable_hands = enable_hands
             self.hand_model = hand_model
             self.hand_interval = max(1, hand_interval)
@@ -179,12 +189,19 @@ def run_qt_app(
                 self.error_ready.emit(str(exc))
                 return
 
+            is_video_file = (
+                self.camera_spec.backend == "opencv"
+                and Path(self.camera_spec.source).is_file()
+            )
+            detection_interval = self.detect_interval or (3 if is_video_file else 1)
+            playback_wall_started: float | None = None
+            playback_video_started_ms: int | None = None
+            last_inference_timestamp_ms: int | None = None
+
             yolo_model = None
             state_machine = None
             if self.model_path:
                 try:
-                    from pathlib import Path
-
                     from ultralytics import YOLO
 
                     if not Path(self.model_path).exists():
@@ -208,9 +225,39 @@ def run_qt_app(
 
             try:
                 frame_index = 0
+                last_observation = None
+                part_box_cache = {}
+                latest_forbidden_detection = None
                 while self._running:
                     ok, frame = frame_source.read()
                     if not ok:
+                        if frame_source.is_finished():
+                            finish_events = []
+                            if state_machine and last_observation is not None:
+                                finish_events = state_machine.finish(last_observation)
+                            final_status = "完成" if state_machine and state_machine.completed else "视频结束"
+                            self.monitor_state_ready.emit({
+                                "status": final_status,
+                                "active_region_id": (
+                                    state_machine.active_region.region_id
+                                    if state_machine and state_machine.active_region else None
+                                ),
+                                "active_hole_id": (
+                                    state_machine.expected_step.hole_id
+                                    if state_machine and state_machine.expected_step else None
+                                ),
+                                "step_phase": state_machine.step_phase if state_machine else "等待零件",
+                                "step_started_timestamp_ms": (
+                                    state_machine.step_started_timestamp_ms if state_machine else None
+                                ),
+                                "events": finish_events,
+                                "installed_hole_keys": (
+                                    sorted(state_machine.confirmed_installed_holes)
+                                    if state_machine else []
+                                ),
+                                "timestamp_ms": last_observation.timestamp_ms if last_observation else 0,
+                            })
+                            break
                         self.error_ready.emit("读取摄像头画面失败，等待新帧")
                         self.msleep(30)
                         continue
@@ -218,6 +265,7 @@ def run_qt_app(
                         self.msleep(30)
                         continue
                     frame_index += 1
+                    frame_timestamp_ms = frame_source.timestamp_ms()
                     detections = []
                     events = []
                     active_region_id = self.config.regions[0].region_id if self.config.regions else None
@@ -226,20 +274,91 @@ def run_qt_app(
 
                     if yolo_model and state_machine:
                         try:
-                            detections = predict_frame(yolo_model, self.config, frame, self.conf)
-                            events = state_machine.update(FrameObservation(frame_index=frame_index, detections=detections))
+                            source_frame_changed = frame_timestamp_ms != last_inference_timestamp_ms
+                            interval_due = (frame_index - 1) % detection_interval == 0
+                            should_detect = (
+                                not state_machine.completed
+                                and source_frame_changed
+                                and (interval_due if is_video_file else True)
+                            )
+                            if should_detect:
+                                # 零件用于确认落位，L 型工具用于确认紧固过程。
+                                detections = predict_frame(
+                                    yolo_model,
+                                    self.config,
+                                    frame,
+                                    min(
+                                        self.conf,
+                                        self.config.tool_confidence_threshold,
+                                        self.config.display_forbidden_tool_confidence_threshold,
+                                    ),
+                                    target_classes={
+                                        "installed_part",
+                                        self.config.tool_class,
+                                        self.config.forbidden_tool_class,
+                                    },
+                                )
+                                last_observation = FrameObservation(
+                                    frame_index=frame_index,
+                                    detections=detections,
+                                    timestamp_ms=frame_timestamp_ms,
+                                )
+                                events = state_machine.update(last_observation)
+                                last_inference_timestamp_ms = frame_timestamp_ms
+                                # 红框与报警状态保持一致，避免弹簧等短暂误检只画框却不报警。
+                                if state_machine.forbidden_alarm_active:
+                                    forbidden_detections = [
+                                        detection
+                                        for detection in detections
+                                        if detection.part_type == self.config.forbidden_tool_class
+                                        and detection.confidence
+                                        >= self.config.display_forbidden_tool_confidence_threshold
+                                    ]
+                                    latest_forbidden_detection = max(
+                                        forbidden_detections,
+                                        key=lambda item: item.confidence,
+                                        default=None,
+                                    )
+                                else:
+                                    latest_forbidden_detection = None
+
+                                confirmed_holes = state_machine.confirmed_installed_holes
+                                for detection in detections:
+                                    key = (detection.region_id, detection.hole_id)
+                                    if (
+                                        detection.part_type == "installed_part"
+                                        and detection.bbox is not None
+                                        and detection.confidence >= self.config.confidence_threshold
+                                        and key in confirmed_holes
+                                    ):
+                                        # 绿框只展示稳定确认后的零件，短时空孔误检不进入画面。
+                                        part_box_cache[key] = (detection, frame_timestamp_ms)
+                                stale_keys = [
+                                    key
+                                    for key, (_, detected_at_ms) in part_box_cache.items()
+                                    if frame_timestamp_ms - detected_at_ms > 800
+                                ]
+                                for key in stale_keys:
+                                    del part_box_cache[key]
                             active_region = state_machine.active_region
                             expected = state_machine.expected_step
                             active_region_id = active_region.region_id if active_region else None
                             active_hole_id = expected.hole_id if expected else None
                             active_roi = expected.roi if expected else None
-                            draw_monitor_overlay(frame, self.config, detections, active_region_id, active_hole_id)
                             self.monitor_state_ready.emit({
-                                "status": "完成" if state_machine.completed else "监控中",
+                                "status": (
+                                    "完成" if state_machine.completed
+                                    else "异常" if state_machine.forbidden_alarm_active
+                                    else "监控中"
+                                ),
                                 "active_region_id": active_region_id,
                                 "active_hole_id": active_hole_id,
+                                "step_phase": state_machine.step_phase,
+                                "step_started_timestamp_ms": state_machine.step_started_timestamp_ms,
                                 "events": events,
+                                "installed_hole_keys": sorted(state_machine.confirmed_installed_holes),
                                 "frame_index": frame_index,
+                                "timestamp_ms": frame_timestamp_ms,
                             })
                         except Exception as exc:  # noqa: BLE001 - 单帧推理异常不应直接关闭客户端。
                             self.error_ready.emit(f"YOLO 检测异常：{exc}")
@@ -248,9 +367,15 @@ def run_qt_app(
 
                     if active_roi is None:
                         active_roi = self._default_active_roi()
+                    draw_visible_detection_boxes(
+                        frame,
+                        [detection for detection, _ in part_box_cache.values()]
+                        + ([latest_forbidden_detection] if latest_forbidden_detection else []),
+                        forbidden_tool_class=self.config.forbidden_tool_class,
+                    )
                     if hand_detector and frame_index % self.hand_interval == 0:
                         try:
-                            hands = hand_detector.detect(frame, timestamp_ms=frame_index * 33)
+                            hands = hand_detector.detect(frame, timestamp_ms=frame_timestamp_ms)
                             near_active_roi = any_hand_near_roi(
                                 hands,
                                 active_roi,
@@ -280,7 +405,16 @@ def run_qt_app(
                         QImage.Format.Format_RGB888,
                     ).copy()
                     self.frame_ready.emit(image)
-                    self.msleep(20)
+                    if is_video_file:
+                        if playback_wall_started is None:
+                            playback_wall_started = time.monotonic()
+                            playback_video_started_ms = frame_timestamp_ms
+                        target_elapsed = (frame_timestamp_ms - (playback_video_started_ms or 0)) / 1000
+                        sleep_seconds = target_elapsed - (time.monotonic() - playback_wall_started)
+                        if sleep_seconds > 0:
+                            self.msleep(max(1, int(round(sleep_seconds * 1000))))
+                    else:
+                        self.msleep(5)
             finally:
                 if hand_detector:
                     hand_detector.close()
@@ -301,8 +435,9 @@ def run_qt_app(
             self.latest_image: QImage | None = None
             self.camera_active = False
             self.step_rows: list[tuple[str, str]] = []
-            self.step_start_frames: dict[tuple[str, str], int] = {}
             self.completed_keys: set[tuple[str, str]] = set()
+            self.abnormal_keys: set[tuple[str, str]] = set()
+            self.installed_keys: set[tuple[str, str]] = set()
             self.abnormal_count = 0
             self.stat_values: dict[str, QLabel] = {}
 
@@ -459,7 +594,8 @@ def run_qt_app(
             count_layout.addWidget(self._stat_cell("异常", "0", "abnormal"), 2, 0)
             layout.addLayout(count_layout, 1)
 
-            self.stats_pie = PieChartWidget(normal_count=0, abnormal_count=0)
+            planned_count = sum(len(region.steps) for region in self.config.regions)
+            self.stats_pie = PieChartWidget(completed_count=0, planned_count=planned_count)
             layout.addWidget(self.stats_pie)
             return panel
 
@@ -504,9 +640,17 @@ def run_qt_app(
             self.step_rows = steps
             self.sop_table.setRowCount(len(steps))
             for row, (region_id, hole_id) in enumerate(steps):
-                status = "当前" if row == 0 else "等待"
-                duration = "0.0s" if row == 0 else "-"
-                self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{region_id}-{hole_id}", "装配确认", status, duration)
+                status = "等待零件" if row == 0 else "等待"
+                next_action = "放入零件" if row == 0 else "等待前序步骤"
+                self._set_sop_row(
+                    row,
+                    str(row + 1),
+                    f"步骤 {row + 1}",
+                    f"{region_id}-{hole_id}",
+                    next_action,
+                    status,
+                    "-",
+                )
 
         def _set_sop_row(
             self,
@@ -533,6 +677,8 @@ def run_qt_app(
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             colors = {
                 "当前": (QColor("#fff7d6"), QColor("#8a5a00")),
+                "等待零件": (QColor("#fff7d6"), QColor("#8a5a00")),
+                "紧固中": (QColor("#dbeafe"), QColor("#1d4ed8")),
                 "完成": (QColor("#dcfce7"), QColor("#166534")),
                 "异常": (QColor("#fee2e2"), QColor("#991b1b")),
                 "等待": (QColor("#ffffff"), QColor("#52606d")),
@@ -556,6 +702,7 @@ def run_qt_app(
                 self.config,
                 model_path,
                 conf,
+                detect_interval,
                 enable_hands,
                 hand_model,
                 hand_interval,
@@ -614,7 +761,15 @@ def run_qt_app(
             status = str(payload.get("status", "监控中"))
             active_region_id = payload.get("active_region_id")
             active_hole_id = payload.get("active_hole_id")
-            frame_index = int(payload.get("frame_index", 0) or 0)
+            timestamp_ms = int(payload.get("timestamp_ms", 0) or 0)
+            step_phase = str(payload.get("step_phase", "等待零件"))
+            started_timestamp = payload.get("step_started_timestamp_ms")
+            started_timestamp_ms = int(started_timestamp) if started_timestamp is not None else None
+            if "installed_hole_keys" in payload:
+                self.installed_keys = {
+                    (str(region_id), str(hole_id))
+                    for region_id, hole_id in payload.get("installed_hole_keys", [])
+                }
 
             if active_region_id:
                 self._set_summary_value(self.region_label, str(active_region_id))
@@ -626,52 +781,99 @@ def run_qt_app(
                 if event.event_type == EventType.STEP_COMPLETED:
                     key = (event.region_id, event.expected_hole_id or "")
                     self.completed_keys.add(key)
-                    self._update_step_result(key, "完成", frame_index)
+                    if key not in self.abnormal_keys:
+                        self._update_step_result(key, "完成", event.duration_ms)
                 elif event.event_type in {EventType.ORDER_ERROR, EventType.MISSING_PART}:
                     self.abnormal_count += 1
-                    key = (event.region_id, event.expected_hole_id or "")
-                    self._update_step_result(key, "异常", frame_index)
+                    if event.event_type == EventType.ORDER_ERROR and event.observed_hole_id:
+                        key = (event.region_id, event.observed_hole_id)
+                        next_action = "顺序错误"
+                    else:
+                        key = (event.region_id, event.expected_hole_id or "")
+                        next_action = "漏装检查"
+                    self.abnormal_keys.add(key)
+                    self._update_step_result(key, "异常", event.duration_ms, next_action)
+                    self._append_abnormal_event(event.message)
+                elif event.event_type == EventType.FORBIDDEN_TOOL:
+                    self.abnormal_count += 1
                     self._append_abnormal_event(event.message)
 
             if active_region_id and active_hole_id:
-                self._mark_active_step((str(active_region_id), str(active_hole_id)), frame_index)
+                self._mark_active_step(
+                    (str(active_region_id), str(active_hole_id)),
+                    timestamp_ms,
+                    step_phase,
+                    started_timestamp_ms,
+                )
 
             self._refresh_stats()
 
-        def _mark_active_step(self, active_key: tuple[str, str], frame_index: int):
+        def _mark_active_step(
+            self,
+            active_key: tuple[str, str],
+            timestamp_ms: int,
+            step_phase: str,
+            started_timestamp_ms: int | None,
+        ):
             for row, key in enumerate(self.step_rows):
-                if key in self.completed_keys:
+                if key in self.completed_keys or key in self.abnormal_keys:
                     continue
                 if key == active_key:
-                    self.step_start_frames.setdefault(key, frame_index)
-                    self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{key[0]}-{key[1]}", "装配确认", "当前", "0.0s")
+                    is_tightening = step_phase == "紧固中" and started_timestamp_ms is not None
+                    elapsed_ms = max(0, timestamp_ms - started_timestamp_ms) if is_tightening else None
+                    self._set_sop_row(
+                        row,
+                        str(row + 1),
+                        f"步骤 {row + 1}",
+                        f"{key[0]}-{key[1]}",
+                        "L 型工具紧固" if is_tightening else "放入零件",
+                        "紧固中" if is_tightening else "等待零件",
+                        self._format_duration(elapsed_ms) if elapsed_ms is not None else "-",
+                    )
                 else:
-                    self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{key[0]}-{key[1]}", "装配确认", "等待", "-")
+                    self._set_sop_row(
+                        row,
+                        str(row + 1),
+                        f"步骤 {row + 1}",
+                        f"{key[0]}-{key[1]}",
+                        "等待前序步骤",
+                        "等待",
+                        "-",
+                    )
 
-        def _update_step_result(self, key: tuple[str, str], result: str, frame_index: int):
+        def _update_step_result(
+            self,
+            key: tuple[str, str],
+            result: str,
+            duration_ms: int | None,
+            next_action: str | None = None,
+        ):
             if key not in self.step_rows:
                 return
             row = self.step_rows.index(key)
-            start_frame = self.step_start_frames.get(key)
-            duration = "-"
-            if start_frame is not None and frame_index:
-                duration = f"{max(0, frame_index - start_frame) / 30:.1f}s"
-            self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{key[0]}-{key[1]}", "装配确认", result, duration)
+            duration = self._format_duration(duration_ms) if duration_ms is not None else "-"
+            action = next_action or ("已完成" if result == "完成" else "处理异常")
+            self._set_sop_row(row, str(row + 1), f"步骤 {row + 1}", f"{key[0]}-{key[1]}", action, result, duration)
+
+        @staticmethod
+        def _format_duration(duration_ms: int) -> str:
+            """把毫秒耗时格式化为表格中的秒数。"""
+
+            return f"{max(0, duration_ms) / 1000:.1f}s"
 
         def _append_abnormal_event(self, message: str):
             if self.event_list.count() == 1 and self.event_list.item(0).text() == "暂无异常":
                 self.event_list.clear()
-            self.event_list.insertItem(0, message)
+            occurred_at = datetime.now().strftime("%H:%M:%S")
+            self.event_list.insertItem(0, f"{occurred_at}  {message}")
             self.event_list.scrollToTop()
 
         def _refresh_stats(self):
-            normal_count = len(self.completed_keys)
-            total = normal_count + self.abnormal_count
-            self.stat_values["total"].setText(str(total))
+            normal_count = len(self.installed_keys)
+            self.stat_values["total"].setText(str(normal_count))
             self.stat_values["normal"].setText(str(normal_count))
             self.stat_values["abnormal"].setText(str(self.abnormal_count))
-            self.stats_pie.normal_count = normal_count
-            self.stats_pie.abnormal_count = self.abnormal_count
+            self.stats_pie.completed_count = normal_count
             self.stats_pie.update()
 
         def update_hand_status(self, status: str):

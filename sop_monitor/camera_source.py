@@ -23,6 +23,12 @@ class FrameSource(Protocol):
     def read(self) -> tuple[bool, object | None]:
         """读取一帧 BGR 图像。"""
 
+    def timestamp_ms(self) -> int:
+        """返回最近一帧相对视频/监控开始时刻的毫秒时间戳。"""
+
+    def is_finished(self) -> bool:
+        """离线视频是否已经播放结束；实时摄像头始终返回 False。"""
+
     def release(self) -> None:
         """释放底层视频资源。"""
 
@@ -60,9 +66,29 @@ class OpenCvFrameSource:
 
     def __init__(self, source: str, width: int | None, height: int | None):
         self.capture = open_camera(source, width, height)
+        self._is_file = isinstance(source, str) and Path(source).is_file()
+        self._started_at = time.monotonic()
+        self._timestamp_ms = 0
+        self._finished = False
 
     def read(self) -> tuple[bool, object | None]:
-        return self.capture.read()
+        ok, frame = self.capture.read()
+        if ok:
+            if self._is_file:
+                import cv2
+
+                self._timestamp_ms = max(0, int(round(self.capture.get(cv2.CAP_PROP_POS_MSEC))))
+            else:
+                self._timestamp_ms = int((time.monotonic() - self._started_at) * 1000)
+        elif self._is_file:
+            self._finished = True
+        return ok, frame
+
+    def timestamp_ms(self) -> int:
+        return self._timestamp_ms
+
+    def is_finished(self) -> bool:
+        return self._finished
 
     def release(self) -> None:
         self.capture.release()
@@ -77,9 +103,11 @@ class LatestFrameOpenCvSource:
 
     def __init__(self, source: str, width: int | None, height: int | None):
         self.capture = open_camera(source, width, height)
+        self._started_at = time.monotonic()
         self._lock = threading.Lock()
         self._latest_frame = None
         self._latest_ok = False
+        self._latest_timestamp_ms = 0
         self._running = True
         self._reader = threading.Thread(target=self._read_loop, name="rtsp-latest-frame-reader", daemon=True)
         self._reader.start()
@@ -90,6 +118,8 @@ class LatestFrameOpenCvSource:
             with self._lock:
                 self._latest_ok = ok
                 self._latest_frame = frame if ok else None
+                if ok:
+                    self._latest_timestamp_ms = int((time.monotonic() - self._started_at) * 1000)
             if not ok:
                 time.sleep(0.03)
 
@@ -98,6 +128,13 @@ class LatestFrameOpenCvSource:
             if not self._latest_ok or self._latest_frame is None:
                 return False, None
             return True, self._latest_frame.copy()
+
+    def timestamp_ms(self) -> int:
+        with self._lock:
+            return self._latest_timestamp_ms
+
+    def is_finished(self) -> bool:
+        return False
 
     def release(self) -> None:
         self._running = False
@@ -128,8 +165,10 @@ class HikvisionSdkFrameSource:
         self._ctypes = ctypes
         self._wintypes = wintypes
         self._lock = threading.Lock()
+        self._started_at = time.monotonic()
         self._latest_frame = None
         self._latest_ok = False
+        self._latest_timestamp_ms = 0
         self._released = False
         self._real_handle = -1
         self._user_id = -1
@@ -397,12 +436,20 @@ class HikvisionSdkFrameSource:
         with self._lock:
             self._latest_frame = frame
             self._latest_ok = True
+            self._latest_timestamp_ms = int((time.monotonic() - self._started_at) * 1000)
 
     def read(self) -> tuple[bool, object | None]:
         with self._lock:
             if not self._latest_ok or self._latest_frame is None:
                 return False, None
             return True, self._latest_frame.copy()
+
+    def timestamp_ms(self) -> int:
+        with self._lock:
+            return self._latest_timestamp_ms
+
+    def is_finished(self) -> bool:
+        return False
 
     def release(self) -> None:
         if self._released:

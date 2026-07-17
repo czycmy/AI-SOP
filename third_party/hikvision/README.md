@@ -21,13 +21,13 @@ libssl-*.dll
 python -m sop_monitor.desktop_app ^
   --camera-backend hikvision-sdk ^
   --hikvision-sdk-dir third_party\hikvision ^
-  --hikvision-ip 192.168.114.222 ^
+  --hikvision-ip 相机IP ^
   --hikvision-user admin ^
   --hikvision-password 密码 ^
   --hikvision-port 8000 ^
   --hikvision-channel 102 ^
   --config configs\calibrated_sop.json ^
-  --model runs\installed_part_roi\weights\best.pt ^
+  --model runs\sop_objects_v1\weights\best.pt ^
   --conf 0.35
 ```
 

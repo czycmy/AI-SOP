@@ -1,7 +1,8 @@
 """摄像头实时 SOP 监控命令。
 
-本命令从摄像头读取实时画面，调用 YOLO 模型检测“已装零件”，再根据孔位 ROI
-把检测结果映射为 H1/H2 等孔位状态，最后交给 SOP 状态机判断顺序和完整性。
+本命令从摄像头读取实时画面，调用 YOLO 模型检测已装零件和 L 型工具；零件按
+孔位 ROI 映射为 H1/H2 等状态，工具按总监控区域映射，最后交给 SOP 状态机判断
+落位、紧固、顺序和完整性。
 可选使用 MediaPipe 在后端检测手部关键点，手部结果只用于画面展示和状态提示，
 不参与 SOP 完成/异常判定。部分 macOS/无头环境下 MediaPipe 图形后端可能不稳定，
 因此需要通过 --hands 显式开启。
@@ -18,6 +19,7 @@ from sop_monitor.camera_utils import (
     draw_monitor_overlay,
     has_any_roi,
     match_detection_to_hole,
+    match_detection_to_region,
     open_camera,
     resolve_camera_source,
 )
@@ -126,31 +128,47 @@ def main() -> int:
     return 0
 
 
-def predict_frame(model, config, frame, conf: float) -> list[Detection]:
-    """用 YOLO 推理一帧，并转换为 SOP 状态机需要的 Detection。"""
+def predict_frame(
+    model,
+    config,
+    frame,
+    conf: float,
+    target_classes: set[str] | None = None,
+) -> list[Detection]:
+    """用 YOLO 推理一帧，并按需过滤类别后转换成孔位检测结果。"""
 
     height, width = frame.shape[:2]
     results = model.predict(frame, conf=conf, verbose=False)
     detections: list[Detection] = []
-    seen_holes: set[tuple[str, str]] = set()
+    seen_hole_classes: set[tuple[str, str, str]] = set()
 
     for result in results:
         names = result.names
         for box in result.boxes:
-            xyxy = tuple(float(value) for value in box.xyxy[0].tolist())
-            matched = match_detection_to_hole(config, xyxy, width, height)
-            if matched is None:
-                continue
-            region_id, step = matched
-            key = (region_id, step.hole_id)
-            if key in seen_holes:
-                continue
-            seen_holes.add(key)
             class_id = int(box.cls[0].item())
+            class_name = names.get(class_id, "installed_part")
+            if target_classes is not None and class_name not in target_classes:
+                continue
+            xyxy = tuple(float(value) for value in box.xyxy[0].tolist())
+            if class_name in {config.tool_class, config.forbidden_tool_class}:
+                region_id = match_detection_to_region(config, xyxy, width, height)
+                if region_id is None:
+                    continue
+                hole_id = "*"
+            else:
+                matched = match_detection_to_hole(config, xyxy, width, height)
+                if matched is None:
+                    continue
+                region_id, step = matched
+                hole_id = step.hole_id
+            key = (region_id, hole_id, class_name)
+            if key in seen_hole_classes:
+                continue
+            seen_hole_classes.add(key)
             detections.append(Detection(
                 region_id=region_id,
-                hole_id=step.hole_id,
-                part_type=names.get(class_id, "installed_part"),
+                hole_id=hole_id,
+                part_type=class_name,
                 present=True,
                 confidence=float(box.conf[0].item()),
                 bbox=xyxy,

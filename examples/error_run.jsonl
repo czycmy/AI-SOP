@@ -1,8 +1,76 @@
-{"frame_index": 1, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "screw_A", "present": true, "confidence": 0.93}]}
-{"frame_index": 2, "detections": [{"region_id": "R1", "hole_id": "H1", "part_type": "screw_A", "present": true, "confidence": 0.92}]}
-{"frame_index": 3, "detections": [{"region_id": "R1", "hole_id": "H1", "part_type": "screw_A", "present": true, "confidence": 0.93}]}
-{"frame_index": 4, "detections": [{"region_id": "R1", "hole_id": "H1", "part_type": "screw_A", "present": true, "confidence": 0.91}]}
-{"frame_index": 5, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "pin_B", "present": true, "confidence": 0.88}]}
-{"frame_index": 6, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "pin_B", "present": true, "confidence": 0.88}]}
-{"frame_index": 7, "detections": [{"region_id": "R1", "hole_id": "H2", "part_type": "pin_B", "present": true, "confidence": 0.88}]}
-
+{"frame_index":1,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":2,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":3,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":4,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":5,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":6,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":7,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":8,"detections":[{"region_id":"R1","hole_id":"H2","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":9,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":10,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":11,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":12,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":13,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":14,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":15,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":16,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":17,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":18,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":19,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":20,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":21,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":22,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":23,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":24,"detections":[{"region_id":"R1","hole_id":"H1","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":25,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":26,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":27,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":28,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":29,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":30,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":31,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":32,"detections":[{"region_id":"R1","hole_id":"H3","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":33,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":34,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":35,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":36,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":37,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":38,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":39,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":40,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":41,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":42,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":43,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":44,"detections":[{"region_id":"R1","hole_id":"H4","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":45,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":46,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":47,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":48,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":49,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":50,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":51,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":52,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":53,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":54,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":55,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":56,"detections":[{"region_id":"R1","hole_id":"H5","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":57,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":58,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":59,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":60,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":61,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":62,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":63,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":64,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":65,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":66,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":67,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":68,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95},{"region_id":"R1","hole_id":"*","part_type":"l_tool_visible","present":true,"confidence":0.9}]}
+{"frame_index":69,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":70,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":71,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":72,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":73,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":74,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":75,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}
+{"frame_index":76,"detections":[{"region_id":"R1","hole_id":"H6","part_type":"installed_part","present":true,"confidence":0.95}]}

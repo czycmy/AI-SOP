@@ -126,12 +126,38 @@ def match_detection_to_hole(
     x1, y1, x2, y2 = bbox
     center_x = ((x1 + x2) / 2) / frame_width
     center_y = ((y1 + y2) / 2) / frame_height
-    for region_id, step in iter_steps(config):
-        if step.roi is None:
+    for region in config.regions:
+        # 区域总 ROI 是第一层过滤，避免模具其他位置的相似目标进入 SOP 判断。
+        if region.roi is not None:
+            roi_x1, roi_y1, roi_x2, roi_y2 = region.roi
+            if not (roi_x1 <= center_x <= roi_x2 and roi_y1 <= center_y <= roi_y2):
+                continue
+        for step in region.steps:
+            if step.roi is None:
+                continue
+            roi_x1, roi_y1, roi_x2, roi_y2 = step.roi
+            if roi_x1 <= center_x <= roi_x2 and roi_y1 <= center_y <= roi_y2:
+                return region.region_id, step
+    return None
+
+
+def match_detection_to_region(
+    config: MonitorConfig,
+    bbox: tuple[float, float, float, float],
+    frame_width: int,
+    frame_height: int,
+) -> str | None:
+    """根据检测框中心点匹配总监控区域，供移动中的工具目标使用。"""
+
+    x1, y1, x2, y2 = bbox
+    center_x = ((x1 + x2) / 2) / frame_width
+    center_y = ((y1 + y2) / 2) / frame_height
+    for region in config.regions:
+        if region.roi is None:
             continue
-        roi_x1, roi_y1, roi_x2, roi_y2 = step.roi
+        roi_x1, roi_y1, roi_x2, roi_y2 = region.roi
         if roi_x1 <= center_x <= roi_x2 and roi_y1 <= center_y <= roi_y2:
-            return region_id, step
+            return region.region_id
     return None
 
 
@@ -154,6 +180,21 @@ def draw_monitor_overlay(
 
     height, width = frame.shape[:2]
     detected_keys = {(item.region_id, item.hole_id) for item in detections}
+    for region in config.regions:
+        if region.roi is None:
+            continue
+        x1, y1, x2, y2 = normalized_roi_to_pixels(region.roi, width, height)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 215, 255), 2)
+        cv2.putText(
+            frame,
+            f"{region.region_id} MONITOR AREA",
+            (x1, max(18, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 215, 255),
+            2,
+            cv2.LINE_AA,
+        )
     for region_id, step in iter_steps(config):
         if step.roi is None:
             continue
@@ -190,6 +231,37 @@ def draw_monitor_overlay(
             2,
             cv2.LINE_AA,
         )
+
+
+def draw_visible_detection_boxes(
+    frame,
+    detections: list[Detection],
+    part_class: str = "installed_part",
+    forbidden_tool_class: str = "forbidden_tool",
+) -> None:
+    """只绘制已装零件和锉刀框，不显示 ROI、文字或置信度。"""
+
+    import cv2
+
+    height, width = frame.shape[:2]
+    for detection in detections:
+        if detection.part_type == part_class:
+            box_color = (32, 220, 96)
+        elif detection.part_type == forbidden_tool_class:
+            box_color = (40, 40, 235)
+        else:
+            continue
+        if detection.bbox is None:
+            continue
+        x1, y1, x2, y2 = [int(round(value)) for value in detection.bbox]
+        x1 = max(0, min(width - 1, x1))
+        y1 = max(0, min(height - 1, y1))
+        x2 = max(0, min(width - 1, x2))
+        y2 = max(0, min(height - 1, y2))
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 3)
 
 
 def normalized_roi_to_pixels(

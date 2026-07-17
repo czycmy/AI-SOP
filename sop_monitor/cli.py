@@ -18,7 +18,7 @@ from sop_monitor.state_machine import SopStateMachine
 def build_parser() -> argparse.ArgumentParser:
     """创建命令行参数解析器。"""
 
-    parser = argparse.ArgumentParser(description="AI SOP AOI monitor MVP")
+    parser = argparse.ArgumentParser(description="AI SOP monitor state-machine replay")
     parser.add_argument("--config", required=True, help="Path to SOP config JSON.")
     parser.add_argument("--detections", required=True, help="Path to detection JSONL.")
     parser.add_argument("--events", default="runs/events.jsonl", help="Output event JSONL path.")
