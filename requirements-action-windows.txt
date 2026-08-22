@@ -1,0 +1,8 @@
+# 锉削动作分类模型的 Windows GPU 训练依赖。
+# 请先根据显卡驱动安装 PyTorch CUDA 版，再安装本文件。
+# 示例（CUDA 12.8）：
+# python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# python -m pip install -r requirements-action-windows.txt
+
+opencv-python==4.13.0.92
+numpy>=1.26,<3

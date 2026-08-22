@@ -1,0 +1,96 @@
+{
+  "confidence_threshold": 0.5,
+  "stable_frames_required": 8,
+  "tool_class": "l_tool_visible",
+  "tool_confidence_threshold": 0.5,
+  "tool_evidence_frames_required": 3,
+  "tool_leave_frames_required": 5,
+  "tool_leave_timeout_ms": 4500,
+  "forbidden_tool_class": "forbidden_tool",
+  "forbidden_tool_confidence_threshold": 0.5,
+  "display_forbidden_tool_confidence_threshold": 0.4,
+  "forbidden_tool_stable_frames_required": 3,
+  "forbidden_tool_clear_frames_required": 15,
+  "forbidden_tool_clear_timeout_ms": 5000,
+  "missing_timeout_frames": 0,
+  "regions": [
+    {
+      "region_id": "R1",
+      "name": "装配区域",
+      "steps": [
+        {
+          "step": 1,
+          "hole_id": "H1",
+          "part_type": "installed_part",
+          "roi": [
+            0.443182,
+            0.114583,
+            0.490057,
+            0.178819
+          ]
+        },
+        {
+          "step": 2,
+          "hole_id": "H2",
+          "part_type": "installed_part",
+          "roi": [
+            0.325284,
+            0.128472,
+            0.367898,
+            0.189236
+          ]
+        },
+        {
+          "step": 3,
+          "hole_id": "H3",
+          "part_type": "installed_part",
+          "roi": [
+            0.465909,
+            0.178819,
+            0.698864,
+            0.260417
+          ]
+        },
+        {
+          "step": 4,
+          "hole_id": "H4",
+          "part_type": "installed_part",
+          "roi": [
+            0.3125,
+            0.190972,
+            0.40767,
+            0.255208
+          ]
+        },
+        {
+          "step": 5,
+          "hole_id": "H5",
+          "part_type": "installed_part",
+          "roi": [
+            0.369318,
+            0.324653,
+            0.471591,
+            0.383681
+          ]
+        },
+        {
+          "step": 6,
+          "hole_id": "H6",
+          "part_type": "installed_part",
+          "roi": [
+            0.382102,
+            0.520833,
+            0.482955,
+            0.579861
+          ]
+        }
+      ],
+      "roi": [
+        0.119318,
+        0.060764,
+        0.769886,
+        0.857639
+      ]
+    }
+  ]
+}

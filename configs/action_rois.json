@@ -1,0 +1,19 @@
+{
+  "source": "dataset/action_test/bare_file_full_test.mp4",
+  "timestamp_seconds": 20.0,
+  "mask_top": 0.115,
+  "action_rois": {
+    "H3": [
+      0.428977,
+      0.036458,
+      0.765625,
+      0.421875
+    ],
+    "H4": [
+      0.213068,
+      0.088542,
+      0.525568,
+      0.423611
+    ]
+  }
+}

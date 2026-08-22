@@ -2,15 +2,18 @@
 
 本文件提供现场部署用的原生桌面界面：自动打开摄像头预览，展示区域 SOP、
 装配画面、状态概览和异常记录。传入 YOLO 模型后，后台根据孔位 ROI 判断零件
-落位和 L 型工具紧固过程，但客户端只显示干净画面，不展示 ROI 或检测框。
+落位和 L 型工具紧固过程；可选的 RGB + 方向光流双模型用于补充识别裸锉刀
+连续动作。动作 ROI 只参与后台推理，不绘制到客户端画面。
 监控控制按钮只做界面预留，后续再接入真实控制逻辑。
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -18,6 +21,44 @@ from sop_monitor.camera_source import CameraSourceSpec, create_frame_source
 from sop_monitor.camera_utils import add_camera_source_arguments, resolve_camera_source
 from sop_monitor.config import load_config
 from sop_monitor.models import MonitorConfig
+
+
+@dataclass(frozen=True)
+class ActionMonitorOptions:
+    """客户端连续动作双模型的启动与判定参数。"""
+
+    rgb_model: str | None = None
+    flow_model: str | None = None
+    device: str = "auto"
+    interval_seconds: float = 0.2
+    rgb_weight: float = 0.7
+    threshold: float = 0.5
+    clear_threshold: float = 0.35
+    vote_window: int = 4
+    trigger_votes: int = 3
+    clear_windows: int = 4
+
+    @property
+    def enabled(self) -> bool:
+        """两个权重都提供时启用连续动作监控。"""
+
+        return bool(self.rgb_model and self.flow_model)
+
+
+@dataclass(frozen=True)
+class ClientExportOptions:
+    """无窗口导出客户端演示视频的参数。"""
+
+    output_path: str | None = None
+    fps: float = 10.0
+    width: int = 1440
+    height: int = 900
+
+    @property
+    def enabled(self) -> bool:
+        """提供输出路径时启用离屏导出。"""
+
+        return bool(self.output_path)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +80,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hands", action="store_true", help="开启 MediaPipe 手部监控展示。")
     parser.add_argument("--hand-model", default="models/hand_landmarker.task", help="MediaPipe 手部模型路径。")
     parser.add_argument("--hand-interval", type=int, default=5, help="手部检测间隔帧数，值越大延迟越低但手部刷新越慢。")
+    parser.add_argument("--action-rgb-model", default=None, help="连续动作RGB模型best.pt。")
+    parser.add_argument("--action-flow-model", default=None, help="连续动作方向光流模型best.pt。")
+    parser.add_argument("--action-device", choices=("auto", "cuda", "mps", "cpu"), default="auto", help="连续动作模型推理设备。")
+    parser.add_argument("--action-interval", type=float, default=0.2, help="连续动作推理间隔秒数。")
+    parser.add_argument("--action-rgb-weight", type=float, default=0.7, help="连续动作RGB融合权重。")
+    parser.add_argument("--action-threshold", type=float, default=0.5, help="连续动作报警阈值。")
+    parser.add_argument("--action-clear-threshold", type=float, default=0.35, help="连续动作报警解除阈值。")
+    parser.add_argument("--action-vote-window", type=int, default=4, help="连续动作触发投票窗口数。")
+    parser.add_argument("--action-trigger-votes", type=int, default=3, help="投票窗口内触发报警所需阳性数。")
+    parser.add_argument("--action-clear-windows", type=int, default=4, help="解除连续动作报警所需低分窗口数。")
+    parser.add_argument("--export-client-video", default=None, help="将完整客户端界面离屏导出为MP4，不打开窗口。")
+    parser.add_argument("--export-fps", type=float, default=10.0, help="客户端演示视频输出帧率。")
+    parser.add_argument("--export-width", type=int, default=1440, help="客户端演示视频宽度。")
+    parser.add_argument("--export-height", type=int, default=900, help="客户端演示视频高度。")
     return parser
 
 
@@ -46,6 +101,15 @@ def main() -> int:
     """启动 PySide6 桌面客户端。"""
 
     args = build_parser().parse_args()
+    if bool(args.action_rgb_model) != bool(args.action_flow_model):
+        raise ValueError("连续动作监控必须同时提供 --action-rgb-model 和 --action-flow-model。")
+    if args.export_client_video:
+        if args.camera_backend != "opencv" or not Path(str(args.camera)).is_file():
+            raise ValueError("客户端视频导出仅支持通过 --camera 指定本地视频文件。")
+        if args.export_fps <= 0 or args.export_width <= 0 or args.export_height <= 0:
+            raise ValueError("客户端视频导出的帧率、宽度和高度必须大于0。")
+        # PySide6尚未导入，此时切换平台插件可确保整个过程不弹出真实窗口。
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
     config = load_config(args.config)
     camera_source = resolve_camera_source(args)
     camera_spec = CameraSourceSpec(
@@ -69,6 +133,24 @@ def main() -> int:
         args.hands,
         args.hand_model,
         args.hand_interval,
+        ActionMonitorOptions(
+            rgb_model=args.action_rgb_model,
+            flow_model=args.action_flow_model,
+            device=args.action_device,
+            interval_seconds=args.action_interval,
+            rgb_weight=args.action_rgb_weight,
+            threshold=args.action_threshold,
+            clear_threshold=args.action_clear_threshold,
+            vote_window=args.action_vote_window,
+            trigger_votes=args.action_trigger_votes,
+            clear_windows=args.action_clear_windows,
+        ),
+        ClientExportOptions(
+            output_path=args.export_client_video,
+            fps=args.export_fps,
+            width=args.export_width,
+            height=args.export_height,
+        ),
     )
 
 
@@ -81,6 +163,8 @@ def run_qt_app(
     enable_hands: bool,
     hand_model: str,
     hand_interval: int,
+    action_options: ActionMonitorOptions,
+    export_options: ClientExportOptions,
 ) -> int:
     """延迟导入 PySide6 并启动应用，避免测试环境没有 Qt 时影响核心模块。"""
 
@@ -108,6 +192,7 @@ def run_qt_app(
         raise RuntimeError("缺少 PySide6，请先安装依赖：.venv/bin/python -m pip install -r requirements.txt") from exc
 
     import cv2
+    import numpy as np
     from sop_monitor.camera_monitor import predict_frame
     from sop_monitor.camera_utils import draw_visible_detection_boxes, has_any_roi
     from sop_monitor.hand_detector import MediaPipeHandDetector, any_hand_near_roi, draw_hand_overlay
@@ -150,7 +235,7 @@ def run_qt_app(
     class CameraWorker(QThread):
         """在独立线程中读取摄像头，避免阻塞 Qt 主界面。"""
 
-        frame_ready = Signal(QImage)
+        frame_ready = Signal(QImage, int)
         error_ready = Signal(str)
         hand_status_ready = Signal(str)
         monitor_state_ready = Signal(object)
@@ -165,6 +250,7 @@ def run_qt_app(
             enable_hands: bool,
             hand_model: str,
             hand_interval: int,
+            action_options: ActionMonitorOptions,
         ):
             super().__init__()
             self.camera_spec = camera_spec
@@ -175,6 +261,7 @@ def run_qt_app(
             self.enable_hands = enable_hands
             self.hand_model = hand_model
             self.hand_interval = max(1, hand_interval)
+            self.action_options = action_options
             self._running = True
 
         def stop(self):
@@ -222,6 +309,29 @@ def run_qt_app(
                 except Exception as exc:  # noqa: BLE001 - 现场客户端需要把启动错误展示到界面。
                     self.hand_status_ready.emit("手部模型异常")
                     self.error_ready.emit(f"手部监控启动失败：{exc}")
+
+            action_monitor = None
+            action_alarm_active = False
+            latest_action_result = None
+            if self.action_options.enabled:
+                try:
+                    from sop_monitor.action_runtime import ActionFusionMonitor
+
+                    action_monitor = ActionFusionMonitor(
+                        rgb_model_path=self.action_options.rgb_model or "",
+                        flow_model_path=self.action_options.flow_model or "",
+                        device=self.action_options.device,
+                        rgb_weight=self.action_options.rgb_weight,
+                        threshold=self.action_options.threshold,
+                        clear_threshold=self.action_options.clear_threshold,
+                        interval_seconds=self.action_options.interval_seconds,
+                        vote_window=self.action_options.vote_window,
+                        trigger_votes=self.action_options.trigger_votes,
+                        clear_windows=self.action_options.clear_windows,
+                    )
+                    self.monitor_state_ready.emit({"status": "监控中", "action_ready": True})
+                except Exception as exc:  # noqa: BLE001 - 动作模型失败时仍保留YOLO和画面。
+                    self.error_ready.emit(f"连续动作模型启动失败：{exc}")
 
             try:
                 frame_index = 0
@@ -348,7 +458,7 @@ def run_qt_app(
                             self.monitor_state_ready.emit({
                                 "status": (
                                     "完成" if state_machine.completed
-                                    else "异常" if state_machine.forbidden_alarm_active
+                                    else "异常" if state_machine.forbidden_alarm_active or action_alarm_active
                                     else "监控中"
                                 ),
                                 "active_region_id": active_region_id,
@@ -365,6 +475,48 @@ def run_qt_app(
                             yolo_model = None
                             state_machine = None
 
+                    if action_monitor:
+                        try:
+                            action_result = action_monitor.process_frame(
+                                frame,
+                                frame_timestamp_ms,
+                            )
+                            if action_result is not None:
+                                latest_action_result = action_result
+                                action_alarm_active = action_result.alarm_active
+                                self.monitor_state_ready.emit({
+                                    "status": "异常" if action_alarm_active else (
+                                        "完成" if state_machine and state_machine.completed else "监控中"
+                                    ),
+                                    "active_region_id": active_region_id,
+                                    "active_hole_id": active_hole_id,
+                                    "step_phase": (
+                                        state_machine.step_phase if state_machine else "等待零件"
+                                    ),
+                                    "step_started_timestamp_ms": (
+                                        state_machine.step_started_timestamp_ms
+                                        if state_machine else None
+                                    ),
+                                    "events": [],
+                                    "installed_hole_keys": (
+                                        sorted(state_machine.confirmed_installed_holes)
+                                        if state_machine else []
+                                    ),
+                                    "timestamp_ms": frame_timestamp_ms,
+                                    "action_alarm_active": action_alarm_active,
+                                    "action_event_started": action_result.event_started,
+                                    "action_event_ended": action_result.event_ended,
+                                    "action_event_count": action_result.event_count,
+                                    "action_probability": action_result.fused_probability,
+                                    "action_rgb_probability": action_result.rgb_probability,
+                                    "action_flow_probability": action_result.flow_probability,
+                                    "action_roi": action_result.active_roi,
+                                })
+                        except Exception as exc:  # noqa: BLE001 - 单次动作异常不关闭客户端。
+                            self.error_ready.emit(f"连续动作检测异常：{exc}")
+                            action_monitor = None
+                            action_alarm_active = False
+
                     if active_roi is None:
                         active_roi = self._default_active_roi()
                     draw_visible_detection_boxes(
@@ -373,6 +525,36 @@ def run_qt_app(
                         + ([latest_forbidden_detection] if latest_forbidden_detection else []),
                         forbidden_tool_class=self.config.forbidden_tool_class,
                     )
+                    if latest_action_result and latest_action_result.alarm_active:
+                        banner_bottom = max(82, frame.shape[0] - 12)
+                        banner_top = banner_bottom - 70
+                        banner_right = min(510, frame.shape[1] - 12)
+                        cv2.rectangle(
+                            frame,
+                            (12, banner_top),
+                            (banner_right, banner_bottom),
+                            (0, 0, 190),
+                            -1,
+                        )
+                        cv2.putText(
+                            frame,
+                            "FILING ACTION ALARM",
+                            (26, banner_top + 31),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.78,
+                            (255, 255, 255),
+                            2,
+                        )
+                        cv2.putText(
+                            frame,
+                            f"ROI {latest_action_result.active_roi}  "
+                            f"score {latest_action_result.fused_probability:.2f}",
+                            (26, banner_top + 58),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.62,
+                            (255, 255, 255),
+                            2,
+                        )
                     if hand_detector and frame_index % self.hand_interval == 0:
                         try:
                             hands = hand_detector.detect(frame, timestamp_ms=frame_timestamp_ms)
@@ -404,7 +586,7 @@ def run_qt_app(
                         bytes_per_line,
                         QImage.Format.Format_RGB888,
                     ).copy()
-                    self.frame_ready.emit(image)
+                    self.frame_ready.emit(image, frame_timestamp_ms)
                     if is_video_file:
                         if playback_wall_started is None:
                             playback_wall_started = time.monotonic()
@@ -428,9 +610,10 @@ def run_qt_app(
     class SopDesktopWindow(QMainWindow):
         """现场工位使用的 AI SOP 桌面主窗口。"""
 
-        def __init__(self, config: MonitorConfig):
+        def __init__(self, config: MonitorConfig, export_options: ClientExportOptions):
             super().__init__()
             self.config = config
+            self.export_options = export_options
             self.camera_worker: CameraWorker | None = None
             self.latest_image: QImage | None = None
             self.camera_active = False
@@ -439,13 +622,19 @@ def run_qt_app(
             self.abnormal_keys: set[tuple[str, str]] = set()
             self.installed_keys: set[tuple[str, str]] = set()
             self.abnormal_count = 0
+            self.action_event_count_seen = 0
             self.stat_values: dict[str, QLabel] = {}
+            self._export_writer = None
+            self._next_export_timestamp_ms: float | None = None
+            self._last_export_progress_bucket = -1
 
             self.setWindowTitle("AI SOP 监控台")
             self.resize(1440, 900)
             self.setMinimumSize(1180, 720)
             self._build_ui()
             self._apply_style()
+            if self.export_options.enabled:
+                self._prepare_client_export()
             self.start_camera()
 
         def _build_ui(self):
@@ -694,9 +883,74 @@ def run_qt_app(
         def mark_control_pending(self):
             self._set_summary_value(self.status_label, "待接入")
 
+        def _prepare_client_export(self):
+            """初始化固定尺寸的客户端界面视频编码器。"""
+
+            output_path = Path(self.export_options.output_path or "").resolve()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            self.setFixedSize(self.export_options.width, self.export_options.height)
+            self._export_writer = cv2.VideoWriter(
+                str(output_path),
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                self.export_options.fps,
+                (self.export_options.width, self.export_options.height),
+            )
+            if not self._export_writer.isOpened():
+                self._export_writer = None
+                raise RuntimeError(f"无法创建客户端演示视频：{output_path}")
+
+        def _capture_client_frame(self, timestamp_ms: int):
+            """按源视频时间采样当前完整界面并写入演示视频。"""
+
+            if self._export_writer is None:
+                return
+            frame_period_ms = 1000.0 / self.export_options.fps
+            if self._next_export_timestamp_ms is None:
+                self._next_export_timestamp_ms = float(timestamp_ms)
+            if timestamp_ms + 0.5 < self._next_export_timestamp_ms:
+                return
+
+            canvas = QImage(
+                self.export_options.width,
+                self.export_options.height,
+                QImage.Format.Format_RGB888,
+            )
+            canvas.fill(QColor("#f4f6f8"))
+            self.render(canvas)
+            raw = np.frombuffer(
+                canvas.bits(),
+                dtype=np.uint8,
+                count=canvas.sizeInBytes(),
+            )
+            rgb = raw.reshape(canvas.height(), canvas.bytesPerLine())[
+                :, : canvas.width() * 3
+            ].reshape(canvas.height(), canvas.width(), 3)
+            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            while self._next_export_timestamp_ms <= timestamp_ms + 0.5:
+                self._export_writer.write(bgr)
+                self._next_export_timestamp_ms += frame_period_ms
+            progress_bucket = timestamp_ms // 10000
+            if progress_bucket > self._last_export_progress_bucket:
+                self._last_export_progress_bucket = progress_bucket
+                minutes, seconds = divmod(timestamp_ms // 1000, 60)
+                print(f"客户端视频导出进度：{minutes:02d}:{seconds:02d}")
+
+        def _release_client_export(self):
+            """完成并关闭客户端演示视频。"""
+
+            if self._export_writer is None:
+                return
+            self._export_writer.release()
+            self._export_writer = None
+            print(
+                "客户端演示视频："
+                f"{Path(self.export_options.output_path or '').resolve()}"
+            )
+
         def start_camera(self):
             if self.camera_active:
                 return
+            self.action_event_count_seen = 0
             self.camera_worker = CameraWorker(
                 camera_spec,
                 self.config,
@@ -706,6 +960,7 @@ def run_qt_app(
                 enable_hands,
                 hand_model,
                 hand_interval,
+                action_options,
             )
             self.camera_worker.frame_ready.connect(self.update_frame)
             self.camera_worker.error_ready.connect(self.show_camera_error)
@@ -733,8 +988,14 @@ def run_qt_app(
                 return
             self.start_camera()
 
-        def update_frame(self, image: QImage):
+        def update_frame(self, image: QImage, timestamp_ms: int):
             self.latest_image = image
+            self._display_frame(image)
+            self._capture_client_frame(timestamp_ms)
+
+        def _display_frame(self, image: QImage):
+            """按画面区域等比例显示最新帧。"""
+
             pixmap = QPixmap.fromImage(image)
             scaled = pixmap.scaled(
                 self.video_label.size(),
@@ -746,7 +1007,7 @@ def run_qt_app(
         def resizeEvent(self, event):
             super().resizeEvent(event)
             if self.latest_image:
-                self.update_frame(self.latest_image)
+                self._display_frame(self.latest_image)
 
         def show_camera_error(self, message: str):
             self.video_label.setText(message)
@@ -797,6 +1058,16 @@ def run_qt_app(
                 elif event.event_type == EventType.FORBIDDEN_TOOL:
                     self.abnormal_count += 1
                     self._append_abnormal_event(event.message)
+
+            action_event_count = int(payload.get("action_event_count", 0) or 0)
+            if action_event_count > self.action_event_count_seen:
+                new_event_count = action_event_count - self.action_event_count_seen
+                self.abnormal_count += new_event_count
+                probability = float(payload.get("action_probability", 0.0) or 0.0)
+                self._append_abnormal_event(
+                    f"检测到疑似违规锉削连续动作（融合置信度{probability:.2f}）。"
+                )
+                self.action_event_count_seen = action_event_count
 
             if active_region_id and active_hole_id:
                 self._mark_active_step(
@@ -882,9 +1153,13 @@ def run_qt_app(
         def on_camera_finished(self):
             self.camera_active = False
             self.camera_btn.setText("打开摄像头")
+            if self.export_options.enabled:
+                self._release_client_export()
+                QApplication.instance().quit()
 
         def closeEvent(self, event):
             self.stop_camera()
+            self._release_client_export()
             event.accept()
 
         def _set_summary_value(self, card: QFrame, value: str):
@@ -1003,7 +1278,7 @@ def run_qt_app(
             """)
 
     app = QApplication(sys.argv)
-    window = SopDesktopWindow(config)
+    window = SopDesktopWindow(config, export_options)
     window.show()
     return app.exec()
 

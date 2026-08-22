@@ -124,6 +124,13 @@ runs/sop_objects_v1/weights/best.pt
 
 该文件属于本地训练产物，不在 GitHub 中。旧的 `runs/installed_part_roi/weights/best.pt` 只有 `installed_part` 一类，不能支持当前 L 型工具证据和锉刀报警。
 
+裸锉刀连续动作使用两个配套权重：
+
+```text
+runs/filing_action_rgb_fusion_v1/best.pt
+runs/filing_action_flow_fusion_v1/best.pt
+```
+
 手部展示模型：
 
 ```text
@@ -144,6 +151,56 @@ source scripts/env.sh
 ```
 
 更换视频即可测试错序、漏装或锉刀场景。离线视频默认按正常速度播放，并自动每 3 帧执行一次 YOLO 推理。
+
+### macOS客户端测试双模型动作报警
+
+当前Mac环境没有可用的CUDA/MPS，下面命令只用于确认客户端报警界面和事件记录，
+视频运行会比正常速度慢。先不加载YOLO，避免三个模型同时占用CPU：
+
+```bash
+source scripts/env.sh
+.venv/bin/python -m sop_monitor.desktop_app \
+  --config configs/calibrated_sop.json \
+  --camera dataset/action_test/bare_file_full_test.mp4 \
+  --action-rgb-model runs/filing_action_rgb_fusion_v1/best.pt \
+  --action-flow-model runs/filing_action_flow_fusion_v1/best.pt \
+  --action-device cpu \
+  --action-interval 1.0 \
+  --action-rgb-weight 0.7 \
+  --action-threshold 0.5 \
+  --action-clear-threshold 0.35
+```
+
+不弹出客户端窗口、直接导出完整客户端演示视频时，使用下面命令。该模式会同时
+运行YOLO与双动作模型，把装配画面、状态、SOP表格、统计和异常记录一起写入MP4，
+处理完成后自动退出：
+
+```bash
+source scripts/env.sh
+.venv/bin/python -m sop_monitor.desktop_app \
+  --config configs/calibrated_sop.json \
+  --camera dataset/action_test/bare_file_full_test.mp4 \
+  --model runs/sop_objects_v1/weights/best.pt \
+  --conf 0.35 \
+  --detect-interval 3 \
+  --action-rgb-model runs/filing_action_rgb_fusion_v1/best.pt \
+  --action-flow-model runs/filing_action_flow_fusion_v1/best.pt \
+  --action-device cpu \
+  --action-interval 1.0 \
+  --action-rgb-weight 0.7 \
+  --action-threshold 0.5 \
+  --action-clear-threshold 0.35 \
+  --export-client-video runs/client_demo_fusion_v1.mp4 \
+  --export-fps 10 \
+  --export-width 1440 \
+  --export-height 900
+```
+
+Windows GPU现场或离线完整联调时，再同时加载YOLO并使用CUDA：
+
+```powershell
+python -m sop_monitor.desktop_app --config configs\calibrated_sop.json --camera dataset\action_test\bare_file_full_test.mp4 --model runs\sop_objects_v1\weights\best.pt --conf 0.35 --action-rgb-model runs\filing_action_rgb_fusion_v1\best.pt --action-flow-model runs\filing_action_flow_fusion_v1\best.pt --action-device cuda --action-interval 0.2 --action-rgb-weight 0.7 --action-threshold 0.5 --action-clear-threshold 0.35
+```
 
 ### 本地摄像头预览
 
@@ -217,6 +274,20 @@ source scripts/env.sh
 
 只重新标定总区域时追加 `--region-only`。ROI 使用归一化 `[x1, y1, x2, y2]`，相机位置、角度或焦距变化后需要重新检查。
 
+如果新视频与原相机画面只有轻微偏移，可以继承旧配置并只重画指定孔位。下面的命令从视频 140 秒处取帧，只更新 H2，并另存为新配置；原配置不会被覆盖：
+
+```bash
+source scripts/env.sh
+.venv/bin/python scripts/roi_calibrator.py \
+  --video dataset/action_test/bare_file_full_test.mp4 \
+  --timestamp 140 \
+  --config configs/calibrated_sop.json \
+  --output configs/calibrated_sop_bare_file.json \
+  --only-hole H2
+```
+
+多个孔位可写成 `--only-hole H2 H3`。旧视频继续使用 `configs/calibrated_sop.json`，新视频启动或导出时改用对应的新配置文件。
+
 ## 数据准备
 
 按每秒 2 帧抽取无损 PNG：
@@ -285,4 +356,156 @@ source scripts/env.sh
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-当前共有 39 项测试，覆盖状态机、顺序异常、工具证据、锉刀报警、ROI、海康通道解析和手部 ROI 判断。
+当前测试覆盖状态机、顺序异常、工具证据、锉刀报警、ROI、海康通道解析、手部 ROI 和动作预处理判断。
+
+## 裸锉刀锉削动作训练与双路融合
+
+黄色包装被撕掉后，单帧 YOLO 可能无法可靠识别锉刀。项目提供
+`scripts/train_action_classifier.py`，用短视频分别训练 RGB 外观模型和方向光流
+模型，作为现有 `forbidden_tool` 外观检测的补充。RGB 路负责工具、手部和场景
+外观，方向光流路保留水平/垂直运动方向，用于识别锉刀的连续往复动作。
+
+数据不需要逐帧画框，按动作类别放入对应文件夹：
+
+```text
+dataset/action_videos/
+├── filing_action/
+├── normal_tightening/
+└── other_action/          # 放件、调整、遮挡等非锉削困难负样本
+```
+
+脚本会对每个类别分别随机划分 `80%/10%/10%`，因此正常紧固与锉削视频会均衡
+分配到训练、验证和测试集合。固定随机种子默认为42，划分明细保存在
+`dataset_split.csv`。脚本同时读取 `configs/action_rois.json` 中的H3/H4动作ROI，
+排除画面顶部时间戳，并按当前窗口的运动量选择正在操作的ROI。默认使用24帧、
+10 FPS、160×160输入，对应约2.4秒动作窗口。短于1.8秒的视频默认跳过。
+
+默认使用三分类：`filing_action`、`normal_tightening`、`other_action`，最终只把
+`filing_action`作为报警类别。这样可以让模型分别学习正常紧固和其他正常动作，
+不再把所有负样本强行压成一种外观。旧权重需要复现时可增加
+`--label-mode binary`。
+
+### 以下两项是一次性数据准备，当前数据已完成
+
+**FFmpeg处理不是每次训练都要执行。** 前期短视频出现H.264缺帧和OpenCV解码
+报错，因此才用FFmpeg重新封装/编码，并把可正常读取的数据放入
+`dataset/action_videos_fixed`。只要现在三个类别中的视频都能读取，就直接训练，
+无需再次转换。下面命令仅用于今后从新的完整正常视频补充 `other_action` 困难
+负样本：
+
+```bat
+python scripts\extract_action_windows.py ^
+  --source dataset\raw_videos\normal\1.mp4 ^
+  --output dataset\action_videos_fixed\other_action ^
+  --window 3 ^
+  --stride 3 ^
+  --ffmpeg C:\ffmpeg\bin\ffmpeg.exe
+```
+
+**动作ROI也只需标定一次。** `configs/action_rois.json` 中的H3/H4是锉削动作模型
+使用的两个较大观察区域，不是六个孔位ROI，也不是逐帧标注框。当前配置已经
+完成，只有相机位置、画面裁切或模具位置明显变化时才重新执行：
+
+```bash
+.venv/bin/python scripts/action_roi_calibrator.py \
+  --source dataset/action_test/bare_file_full_test.mp4 \
+  --timestamp 20 \
+  --output configs/action_rois.json
+```
+
+依次框选H3、H4附近较大的动作范围，框内需要保留孔位、手、L型工具与锉刀的
+主要运动轨迹。动作ROI仅用于动作模型，不会修改原有六个孔位的装配判断ROI。
+
+### Windows PowerShell：从训练到测试
+
+以下命令全部在项目根目录的 **PowerShell** 中执行，每个代码块是一条完整命令，
+不要输入 CMD 使用的 `^`，也不要输入网页中的 `<br/>`。
+
+#### 第1步：进入项目并激活环境
+
+```powershell
+cd C:\Users\zhengyu_chen\PycharmProjects\AI-SOP-main\AI-SOP-main
+.\.venv\Scripts\Activate.ps1
+```
+
+命令行左侧出现 `(.venv)` 后，再继续下面步骤。
+
+#### 第2步：确认 CUDA 和三类数据
+
+```powershell
+python -c "import torch; print('CUDA可用:', torch.cuda.is_available()); print('显卡:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else '未检测到')"
+```
+
+结果必须显示 `CUDA可用: True`。数据目录必须是：
+
+```text
+dataset\action_videos_fixed\filing_action\          锉刀动作视频
+dataset\action_videos_fixed\normal_tightening\     正常L型工具紧固视频
+dataset\action_videos_fixed\other_action\           放件、拿取、手经过等正常动作
+```
+
+同时确认 `configs\action_rois.json` 存在。RGB和方向光流训练必须使用这同一份ROI。
+
+#### 第3步：重新训练 RGB 模型
+
+本版本改成三分类并增加了小数据时序增强，因此建议重新训练RGB，不再混用前面
+实验产生的RGB权重：
+
+```powershell
+python scripts\train_action_classifier.py --data dataset\action_videos_fixed --output runs\filing_action_rgb_fusion_v1 --input-mode rgb --label-mode three-class --epochs 30 --batch-size 4 --frames 24 --sample-fps 10 --action-rois configs\action_rois.json --seed 42 --device cuda
+```
+
+训练结束后确认下面文件存在：
+
+```powershell
+Test-Path runs\filing_action_rgb_fusion_v1\best.pt
+```
+
+输出 `True` 才进入下一步。
+
+#### 第4步：训练方向光流模型
+
+使用完全相同的数据、ROI、随机种子和采样参数，只改变输入模式和输出目录：
+
+```powershell
+python scripts\train_action_classifier.py --data dataset\action_videos_fixed --output runs\filing_action_flow_fusion_v1 --input-mode flow --label-mode three-class --epochs 30 --batch-size 4 --frames 24 --sample-fps 10 --action-rois configs\action_rois.json --seed 42 --device cuda
+```
+
+训练结束后确认：
+
+```powershell
+Test-Path runs\filing_action_flow_fusion_v1\best.pt
+```
+
+输出 `True` 表示两个模型都准备好了。显存不足时，只把两条训练命令中的
+`--batch-size 4` 改成 `--batch-size 2`，其他参数不要改。
+
+#### 第5步：测试完整视频
+
+```powershell
+python scripts\test_action_video.py --rgb-model runs\filing_action_rgb_fusion_v1\best.pt --flow-model runs\filing_action_flow_fusion_v1\best.pt --source dataset\action_test\bare_file_full_test.mp4 --output runs\filing_action_fusion_test_v1 --rgb-weight 0.7 --threshold 0.5 --clear-threshold 0.35 --stride-seconds 0.2 --vote-window 4 --alarm-windows 3 --clear-windows 4 --device cuda
+```
+
+该命令按 `RGB 0.7 + 方向光流 0.3` 融合。4个滑动窗口中至少3个达到0.5才
+触发报警；报警后连续4个窗口低于0.35才结束事件，所以一次连续锉削只累计一次。
+
+结果目录会生成：
+
+- `result.mp4`：带融合概率、报警状态和事件次数的视频。
+- `predictions.csv`：每个滑动窗口的 RGB、方向光流、融合概率及H3/H4明细。
+- `events.csv`：去重后的锉削事件起止时间、持续时间、峰值概率和区域。
+
+本次测试视频的已知锉削区间约为 `24～42秒` 和 `73～94秒`。第一轮验收只看：
+
+1. `events.csv` 是否正好有2条事件。
+2. 两条事件是否分别与上述两个区间重叠。
+3. 其他时间是否没有新增事件。
+
+窗口本身覆盖约2.4秒，再加连续投票，因此报警时间比真实动作开始晚约1～3秒
+属于正常现象。测试结果不满足时，先保留 `predictions.csv` 和 `events.csv`，不要
+反复随机改阈值或重新训练；应根据RGB、光流各自概率确定是哪一路造成漏报或误报。
+
+旧的单模型命令 `--model xxx\best.pt` 仍可用于对照。`motion` 绝对帧差模式也保留
+用于读取旧权重，但它不保留运动方向，不再作为锉削动作的推荐训练方式。小数据
+随机验证集出现 `acc=1.000` 只代表该次划分，最终仍应以完整视频中目标锉削区间
+是否各产生一次事件、其他时段是否零报警作为验收标准。
