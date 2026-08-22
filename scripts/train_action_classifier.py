@@ -6,9 +6,14 @@
 训练结果可作为现有 YOLO 禁止工具外观检测的补充：YOLO 负责识别明显锉刀，
 本模型负责识别黄色包装被撕掉后仍然存在的连续锉削动作。
 
+RGB 和方向光流需要分别运行本脚本，得到两份 ``best.pt``；客户端再融合两路
+概率。两次训练必须使用相同数据目录、随机种子、动作 ROI、帧数和采样帧率，
+只改变 ``--input-mode`` 与 ``--output``。
+
 数据目录示例：
 dataset/action_videos/filing_action/*.mp4
 dataset/action_videos/normal_tightening/*.mp4
+dataset/action_videos/other_action/*.mp4
 """
 
 from __future__ import annotations

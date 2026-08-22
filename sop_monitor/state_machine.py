@@ -4,6 +4,10 @@
 维护当前区域和当前期望 SOP 步骤，校验装配顺序，并通过“零件稳定落位、L 型
 工具参与紧固、工具离开且零件重新稳定可见”三个阶段确认孔位完成。ROI 和检测框
 只用于后台判断，不属于业务状态本身。
+
+主状态流：等待当前零件 -> 零件稳定并开始计时 -> 收集紧固工具证据 ->
+工具离开 -> 零件再次稳定 -> 完成当前步骤。未来孔位提前稳定出现会记录错序，
+但不会把期望步骤强行改成该孔位；禁止工具报警也独立于这条完成链路。
 """
 
 from __future__ import annotations
@@ -25,14 +29,17 @@ from sop_monitor.models import (
 class StepRuntime:
     """当前期望 SOP 步骤的临时计数器。"""
 
+    # 阶段一：排除零件偶发误检，连续稳定后才进入“紧固中”。
     part_stable_frames: int = 0
     final_part_stable_frames: int = 0
+    # 阶段二：工具可以被手遮挡，所以这里累计证据，而不是要求每帧连续可见。
     tool_evidence_frames: int = 0
     tool_leave_frames: int = 0
     next_step_stable_frames: int = 0
     elapsed_frames: int = 0
     part_placed: bool = False
     tool_seen: bool = False
+    # 时间戳用于计算孔位耗时；帧计数只作为没有可靠时间戳时的回退。
     part_candidate_timestamp_ms: int | None = None
     started_timestamp_ms: int | None = None
     tool_last_seen_timestamp_ms: int | None = None
@@ -41,7 +48,11 @@ class StepRuntime:
 
 
 class SopStateMachine:
-    """根据已配置的 SOP 顺序校验逐帧检测结果。"""
+    """根据已配置的 SOP 顺序校验逐帧检测结果。
+
+    该类只接收 :class:`FrameObservation`，不读取摄像头、不运行模型、不更新 Qt。
+    排查业务状态时应从 ``update`` 开始阅读；界面显示问题则应去 desktop_app。
+    """
 
     def __init__(self, config: MonitorConfig):
         self.config = config
@@ -98,6 +109,8 @@ class SopStateMachine:
 
         self.runtime.elapsed_frames += 1
         events: list[MonitorEvent] = []
+        # “实际已装数量”和“SOP 已完成步骤”不是同一概念。前者用于加工量统计，
+        # 即使发生错序也要计入；后者只有走完整紧固流程才会推进。
         self._track_installed_holes(observation.detections)
         detections = self._active_detections(observation, region.region_id)
         events.extend(self._update_forbidden_tool(observation, region, expected, detections))
@@ -164,6 +177,8 @@ class SopStateMachine:
             self.runtime.next_step_stable_frames = 0
             self.runtime.next_step_candidate_timestamp_ms = None
 
+        # 当前步骤尚未确认零件时，只运行等待/漏装分支；确认后才进入紧固分支。
+        # 这样“零件刚放入”只代表步骤开始，不会被误认为步骤已经完成。
         if not self.runtime.part_placed:
             events.extend(self._update_waiting_for_part(
                 observation,

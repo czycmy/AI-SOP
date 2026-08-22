@@ -4,6 +4,9 @@
 
 当前现场客户端为 PySide6 原生桌面程序，不依赖浏览器。目标部署环境为 Windows GPU 边缘电脑，取流支持本地摄像头、离线视频、RTSP 和 Windows 海康 SDK。
 
+> 第一次接手、部署或维护本项目，请先阅读
+> [《AI SOP 项目技术交接手册》](docs/AI_SOP项目技术交接手册.md)。手册按零基础接手场景说明业务逻辑、环境、模型资产、启动、训练和故障排查。
+
 ## 当前试点
 
 - 监控区域：`R1`。
@@ -64,15 +67,25 @@
 ```text
 .
 ├── configs/
-│   ├── sample_sop.json          # 六孔位示例及业务阈值，无现场 ROI
-│   └── calibrated_sop.json      # 当前现场标定 ROI
+│   ├── sample_sop.json                   # 六孔位模板及业务阈值，无现场 ROI
+│   ├── calibrated_sop.json               # 原现场画面的孔位 ROI
+│   ├── calibrated_sop_bare_file.json     # 新测试视频专用孔位 ROI
+│   └── action_rois.json                   # H3/H4 连续动作大 ROI
+├── docs/
+│   └── AI_SOP项目技术交接手册.md         # 面向新接手人的完整技术手册
 ├── examples/                    # JSONL 状态机回放样例
 ├── scripts/
 │   ├── env.sh                   # 本地缓存环境变量
 │   ├── extract_frames.py        # 视频定时抽帧
 │   ├── labelme_to_yolo.py       # 三类 LabelMe 标注转 YOLO
-│   └── roi_calibrator.py        # 总区域和孔位 ROI 标定
+│   ├── roi_calibrator.py        # 总区域和孔位 ROI 标定
+│   ├── action_roi_calibrator.py # H3/H4 动作 ROI 标定
+│   ├── extract_action_windows.py # 连续动作困难负样本切片
+│   ├── train_action_classifier.py # RGB/光流动作模型训练
+│   └── test_action_video.py     # 双模型完整视频测试
 ├── sop_monitor/
+│   ├── action_recognition.py    # 动作预处理、概率融合和时序投票
+│   ├── action_runtime.py        # 客户端双动作模型实时推理
 │   ├── camera_source.py         # OpenCV/RTSP/海康 SDK 统一取流层
 │   ├── camera_monitor.py        # YOLO 检测结果转换与 CLI 监控
 │   ├── camera_preview.py        # 简单摄像头预览

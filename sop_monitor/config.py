@@ -2,6 +2,9 @@
 
 本模块读取 JSON SOP 配置文件，并转换成带类型的 MonitorConfig 对象。
 配置内容包括物理区域、每个区域内的孔位装配顺序，以及运行时校验阈值。
+
+现场孔位、顺序和阈值都应留在 JSON 中，不要写死到界面或状态机。这样更换
+模具或相机画面时，只需生成一份新配置，并保留旧配置用于旧视频复现。
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ def load_config(path: str | Path) -> MonitorConfig:
     """加载并校验 JSON SOP 配置文件。"""
 
     data = json.loads(Path(path).read_text(encoding="utf-8"))
+    # 配置中的数组顺序就是业务执行顺序：先遍历区域，再遍历区域内步骤。
+    # ROI 均为归一化 xyxy 坐标，实际像素换算统一在 camera_utils 中完成。
     regions = [
         RegionSpec(
             region_id=region["region_id"],

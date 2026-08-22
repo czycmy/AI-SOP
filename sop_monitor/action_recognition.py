@@ -3,6 +3,11 @@
 本模块统一训练与推理阶段的 H3/H4 动作 ROI 裁剪、时间戳区域排除、
 RGB/帧差/方向光流输入转换、R3D-18 分类头结构，以及连续锉削事件状态机。
 方向光流保留运动方向，用于区分锉刀往复运动与正常 L 型工具紧固动作。
+
+这里不负责打开视频或显示界面，只提供训练和运行时共同使用的纯算法组件：
+动作 ROI 裁剪 -> 连续帧预处理 -> R3D-18 -> RGB/光流概率融合 -> 多 ROI
+时序投票。训练脚本和客户端共用同一套函数，避免训练、测试、现场三处预处理
+不一致。
 """
 
 from __future__ import annotations
@@ -19,6 +24,8 @@ from torch import nn
 from torchvision.models.video import R3D_18_Weights, r3d_18
 
 
+# RGB 路使用 R3D-18 的 Kinetics-400 预训练归一化参数；不要随意改动，否则
+# 已训练权重的输入分布会发生变化。
 KINETICS_MEAN = torch.tensor([0.43216, 0.394666, 0.37645]).view(1, 3, 1, 1)
 KINETICS_STD = torch.tensor([0.22803, 0.22145, 0.216989]).view(1, 3, 1, 1)
 MOTION_MEAN = torch.tensor([0.12, 0.12, 0.12]).view(1, 3, 1, 1)

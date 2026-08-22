@@ -3,6 +3,11 @@
 本文件定义配置加载、检测输入、SOP 状态校验、事件日志都会用到的共享结构。
 这些模型保持简单明确，后续把第一阶段 JSONL 检测输入替换成真实 YOLO/ONNX
 检测器时，只需要输出同样的数据结构即可。
+
+接手代码时可把数据流记成下面四步：
+JSON 配置 -> MonitorConfig；YOLO 原始框 -> Detection；一帧结果 ->
+FrameObservation；状态机判定 -> MonitorEvent。状态机不直接依赖 YOLO 或 Qt，
+因此模型、摄像头和界面可以分别替换。
 """
 
 from __future__ import annotations
@@ -26,7 +31,10 @@ class EventType(str, Enum):
 
 @dataclass(frozen=True)
 class StepSpec:
-    """一个 SOP 步骤：指定孔位需要确认已装。"""
+    """一个 SOP 步骤：指定孔位需要确认已装。
+
+    roi 使用 0～1 的归一化 ``(x1, y1, x2, y2)``，不会绑定某一种分辨率。
+    """
 
     step: int
     hole_id: str
@@ -46,7 +54,11 @@ class RegionSpec:
 
 @dataclass(frozen=True)
 class MonitorConfig:
-    """一次检测任务的运行参数和区域顺序配置。"""
+    """一次检测任务的运行参数和区域顺序配置。
+
+    ``confidence_threshold`` 控制零件确认；工具和禁止工具各自使用独立阈值。
+    调参时不要只改客户端的 ``--conf``，业务是否成立最终仍以这里的阈值为准。
+    """
 
     regions: list[RegionSpec]
     confidence_threshold: float = 0.75

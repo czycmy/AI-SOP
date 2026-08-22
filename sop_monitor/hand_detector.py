@@ -38,7 +38,7 @@ class MediaPipeHandDetector:
         if not self.model_path.exists():
             raise FileNotFoundError(
                 f"找不到 MediaPipe 手部模型：{self.model_path}。"
-                "请先下载 hand_landmarker.task，或使用 --no-hands 关闭手部检测。"
+                "请先下载 hand_landmarker.task，或启动客户端时不要添加 --hands。"
             )
 
         options = HandLandmarkerOptions(

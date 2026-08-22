@@ -6,7 +6,9 @@
 可选使用 MediaPipe 在后端检测手部关键点，手部结果只用于画面展示和状态提示，
 不参与 SOP 完成/异常判定。部分 macOS/无头环境下 MediaPipe 图形后端可能不稳定，
 因此需要通过 --hands 显式开启。
-当前只支持摄像头输入，不实现导入视频检测。
+
+本文件保留为命令行监控/调试入口；现场主入口是 ``desktop_app.py``。离线视频
+联调、海康 SDK 和双动作模型也应优先通过桌面客户端启动。
 """
 
 from __future__ import annotations
@@ -150,6 +152,8 @@ def predict_frame(
             if target_classes is not None and class_name not in target_classes:
                 continue
             xyxy = tuple(float(value) for value in box.xyxy[0].tolist())
+            # 零件属于某个具体孔位；移动工具可能跨出孔位小框，因此只要求它的
+            # 中心位于区域总 ROI。二者不能共用同一种 ROI 匹配方式。
             if class_name in {config.tool_class, config.forbidden_tool_class}:
                 region_id = match_detection_to_region(config, xyxy, width, height)
                 if region_id is None:
@@ -162,6 +166,8 @@ def predict_frame(
                 region_id, step = matched
                 hole_id = step.hole_id
             key = (region_id, hole_id, class_name)
+            # 同一帧、同一孔位、同一类别只保留一个结果，避免重复检测框让状态机
+            # 在一帧内累计多次证据。
             if key in seen_hole_classes:
                 continue
             seen_hole_classes.add(key)

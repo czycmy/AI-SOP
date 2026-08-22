@@ -5,6 +5,10 @@
 落位和 L 型工具紧固过程；可选的 RGB + 方向光流双模型用于补充识别裸锉刀
 连续动作。动作 ROI 只参与后台推理，不绘制到客户端画面。
 监控控制按钮只做界面预留，后续再接入真实控制逻辑。
+
+运行结构：Qt 主线程只负责绘制界面；CameraWorker 独立线程完成取流、YOLO、
+SOP 状态机、可选动作模型和手部检测，再通过 Signal 把一帧画面和状态字典送回
+主线程。维护时不要在 Qt 主线程直接做模型推理，否则窗口会明显卡顿。
 """
 
 from __future__ import annotations
@@ -233,7 +237,11 @@ def run_qt_app(
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{completed}/{self.planned_count}")
 
     class CameraWorker(QThread):
-        """在独立线程中读取摄像头，避免阻塞 Qt 主界面。"""
+        """在独立线程中读取摄像头并执行所有视觉推理。
+
+        ``frame_ready`` 只传显示画面，``monitor_state_ready`` 传业务状态。
+        Qt 控件只能在主线程修改，所以本线程不直接访问界面组件。
+        """
 
         frame_ready = Signal(QImage, int)
         error_ready = Signal(str)
@@ -280,6 +288,8 @@ def run_qt_app(
                 self.camera_spec.backend == "opencv"
                 and Path(self.camera_spec.source).is_file()
             )
+            # 离线视频要按源时间戳控制播放速度；实时流由取流后端自行提供最新帧。
+            # 视频默认隔 3 帧跑一次 YOLO，现场摄像头默认每个新帧都检测。
             detection_interval = self.detect_interval or (3 if is_video_file else 1)
             playback_wall_started: float | None = None
             playback_video_started_ms: int | None = None
@@ -313,6 +323,8 @@ def run_qt_app(
             action_monitor = None
             action_alarm_active = False
             latest_action_result = None
+            # 连续动作模型和 YOLO/SOP 是两条独立判定链。动作模型启动失败时，
+            # 孔位装配监控仍可继续，反之亦然。
             if self.action_options.enabled:
                 try:
                     from sop_monitor.action_runtime import ActionFusionMonitor
@@ -346,6 +358,8 @@ def run_qt_app(
                             if state_machine and last_observation is not None:
                                 finish_events = state_machine.finish(last_observation)
                             final_status = "完成" if state_machine and state_machine.completed else "视频结束"
+                            # 跨线程只发送普通字典和事件对象，界面层据此刷新表格、
+                            # 计数和异常列表，不在这里直接操作任何 Qt 控件。
                             self.monitor_state_ready.emit({
                                 "status": final_status,
                                 "active_region_id": (
